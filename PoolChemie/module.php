@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 class PoolChemie extends IPSModule
 {
+
     private const MQTT_SERVER_MODULE = '{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}';
 
-    private const MQTT_RX_DATA_ID = '{043EA491-0325-4ADD-8FC2-A30C8EEB4D3F}';
-    private const MQTT_TX_DATA_ID = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
+    // Daten vom MQTT Server zum PoolChemie Modul
+    private const MQTT_RX_DATA_ID = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
+
+    // Daten vom PoolChemie Modul zum MQTT Server
+    private const MQTT_TX_DATA_ID = '{043EA491-0325-4ADD-8FC2-A30C8EEB4D3F}'
+
 
 
     public function Create()
@@ -76,7 +81,29 @@ private function RegisterProfiles(): void
     if (!IPS_VariableProfileExists('POOLCHEMIE.Kilogramm')) {
         IPS_CreateVariableProfile('POOLCHEMIE.Kilogramm', 2);
         IPS_SetVariableProfileText('POOLCHEMIE.Kilogramm', '', ' kg');
-        IPS_SetVariableProfileDigits('POOLCHEMIE.Kilogramm', 1);
+        IPS_SetVariableProfileDigits('POOLCHEMIE.Kilogramm', 3);
+    }
+
+    if (!IPS_VariableProfileExists('POOLCHEMIE.Button')) {
+        IPS_CreateVariableProfile('POOLCHEMIE.Button', 1);
+        IPS_SetVariableProfileAssociation(
+            'POOLCHEMIE.Button',
+            1,
+            'Auslösen',
+            '',
+            0x00AA00
+        );
+    }
+
+    if (!IPS_VariableProfileExists('POOLCHEMIE.DeleteButton')) {
+        IPS_CreateVariableProfile('POOLCHEMIE.DeleteButton', 1);
+        IPS_SetVariableProfileAssociation(
+            'POOLCHEMIE.DeleteButton',
+            1,
+            'Löschen',
+            '',
+            0xCC0000
+        );
     }
 }
 
@@ -125,29 +152,35 @@ private function CreateScaleVariables(int $scale): void
         1
     );
 
-    $this->RegisterVariableBoolean(
+
+    this->RegisterVariableInteger(
         'TareButton_' . $scale,
         $name . ' Tara auslösen',
-        '~Switch',
+        'POOLCHEMIE.Button',
         1
     );
     $this->EnableAction('TareButton_' . $scale);
 
-    $this->RegisterVariableBoolean(
+
+
+    $this->RegisterVariableInteger(
         'ClearTareButton_' . $scale,
         $name . ' Tara löschen',
-        '~Switch',
+        'POOLCHEMIE.DeleteButton',
         1
     );
     $this->EnableAction('ClearTareButton_' . $scale);
+    ;
 
-    $this->RegisterVariableBoolean(
+
+    $this->RegisterVariableInteger(
         'ResetTotalButton_' . $scale,
         $name . ' Gesamtverbrauch löschen',
-        '~Switch',
-       1
+        'POOLCHEMIE.DeleteButton',
+        1
     );
     $this->EnableAction('ResetTotalButton_' . $scale);
+
 }
 
 public function RequestAction($Ident, $Value)
@@ -162,7 +195,7 @@ public function RequestAction($Ident, $Value)
 
         $this->SendTare($scale);
 
-        SetValue($this->GetIDForIdent($Ident), false);
+        SetValue($this->GetIDForIdent($Ident), 0);
         return;
     }
 
@@ -171,7 +204,7 @@ public function RequestAction($Ident, $Value)
 
         $this->SendClearTare($scale);
 
-        SetValue($this->GetIDForIdent($Ident), false);
+        SetValue($this->GetIDForIdent($Ident), 0);
         return;
     }
 
@@ -179,8 +212,8 @@ public function RequestAction($Ident, $Value)
         $scale = (int)$matches[1];
 
         SetValue($this->GetIDForIdent('ConsumptionTotal_' . $scale), 0.0);
-        SetValue($this->GetIDForIdent($Ident), false);
 
+        SetValue($this->GetIDForIdent($Ident), 0);
         return;
     }
 
@@ -307,7 +340,7 @@ private function SendClearTare(int $scale): void
 private function PublishMQTT(string $topic, string $payload, bool $retain = false, int $qos = 0): void
 {
     $data = [
-        'DataID'           => '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}',
+        'DataID'           => self::MQTT_TX_DATA_ID,
         'PacketType'       => 3,
         'QualityOfService' => $qos,
         'Retain'           => $retain,
