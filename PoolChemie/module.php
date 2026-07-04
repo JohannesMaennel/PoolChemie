@@ -185,6 +185,19 @@ private function CreateScaleVariables(int $scale): void
 
 public function RequestAction($Ident, $Value)
 {
+    $this->SendDebug(
+        'RequestAction',
+        'Ident=' . $Ident . ' Value=' . print_r($Value, true),
+        0
+    );
+
+    
+    IPS_LogMessage(
+        'PoolChemie RequestAction',
+        'Ident=' . $Ident . ' Value=' . print_r($Value, true)
+    );
+
+
     if (preg_match('/^ConsumptionEnabled_([1-4])$/', $Ident, $matches)) {
         SetValue($this->GetIDForIdent($Ident), (bool)$Value);
         return;
@@ -192,6 +205,8 @@ public function RequestAction($Ident, $Value)
 
     if (preg_match('/^TareButton_([1-4])$/', $Ident, $matches)) {
         $scale = (int)$matches[1];
+
+        $this->SendDebug('Tare', 'TareButton gedrückt für Waage ' . $scale, 0);
 
         $this->SendTare($scale);
 
@@ -201,6 +216,8 @@ public function RequestAction($Ident, $Value)
 
     if (preg_match('/^ClearTareButton_([1-4])$/', $Ident, $matches)) {
         $scale = (int)$matches[1];
+
+        $this->SendDebug('TareClear', 'ClearTareButton gedrückt für Waage ' . $scale, 0);
 
         $this->SendClearTare($scale);
 
@@ -212,7 +229,6 @@ public function RequestAction($Ident, $Value)
         $scale = (int)$matches[1];
 
         SetValue($this->GetIDForIdent('ConsumptionTotal_' . $scale), 0.0);
-
         SetValue($this->GetIDForIdent($Ident), 0);
         return;
     }
@@ -228,7 +244,8 @@ private function SendTare(int $scale): void
 
     $this->PublishMQTT(
         $baseTopic . '/cmd/waage' . $scale . '/tare',
-        '1'
+        '1',
+        false
     );
 }
 
@@ -240,7 +257,8 @@ private function SendClearTare(int $scale): void
 
     $this->PublishMQTT(
         $baseTopic . '/cmd/waage' . $scale . '/tare_clear',
-        '1'
+        '1',
+        false
     );
 }
 
@@ -348,9 +366,12 @@ private function PublishMQTT(string $topic, string $payload, bool $retain = fals
         'Payload'          => $payload
     ];
 
-    IPS_LogMessage('PoolChemie TX', json_encode($data));
+    $json = json_encode($data);
 
-    $this->SendDataToParent(json_encode($data));
+    $this->SendDebug('MQTT TX', $json, 0);
+    IPS_LogMessage('PoolChemie TX', $json);
+
+    $this->SendDataToParent($json);
 }
 
 private function CalculateConsumption(int $scale, float $newWeight): void
