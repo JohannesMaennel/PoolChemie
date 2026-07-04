@@ -1,1 +1,8 @@
 .vs/ 
+# ESPHome Secrets
+secrets.yaml
+esphome/secrets.yaml
+
+# ESPHome Build-Dateien
+.esphome/
+**/.esphome/
