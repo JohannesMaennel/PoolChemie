@@ -1,0 +1,13 @@
+{
+    "id": "{C384FA35-60DC-4F35-B86E-7B8CC1372E01}",
+    "name": "PoolChemie",
+    "type": 3,
+    "vendor": "Johannes Maennel",
+    "aliases": [
+        "PoolChemie"
+    ],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "POOLCHEMIE"
+}
