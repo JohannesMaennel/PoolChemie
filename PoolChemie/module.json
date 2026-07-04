@@ -3,12 +3,8 @@
     "name": "PoolChemie",
     "type": 3,
     "vendor": "Johannes Maennel",
-    "aliases": [
-        "PoolChemie"
-    ],
-    "parentRequirements": [
-        "{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}"
-    ],
+    "aliases": ["PoolChemie"],
+    "parentRequirements": [],
     "childRequirements": [],
     "implemented": [],
     "prefix": "POOLCHEMIE"
