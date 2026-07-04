@@ -11,7 +11,7 @@ class PoolChemie extends IPSModule
     private const MQTT_RX_DATA_ID = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
 
     // Daten vom PoolChemie Modul zum MQTT Server
-    private const MQTT_TX_DATA_ID = '{043EA491-0325-4ADD-8FC2-A30C8EEB4D3F}'
+    private const MQTT_TX_DATA_ID = '{043EA491-0325-4ADD-8FC2-A30C8EEB4D3F}';
 
 
 
@@ -153,7 +153,7 @@ private function CreateScaleVariables(int $scale): void
     );
 
 
-    this->RegisterVariableInteger(
+    $this->RegisterVariableInteger(
         'TareButton_' . $scale,
         $name . ' Tara auslösen',
         'POOLCHEMIE.Button',
@@ -351,6 +351,42 @@ private function PublishMQTT(string $topic, string $payload, bool $retain = fals
     IPS_LogMessage('PoolChemie TX', json_encode($data));
 
     $this->SendDataToParent(json_encode($data));
+}
+
+private function CalculateConsumption(int $scale, float $newWeight): void
+{
+    $enabledIdent = 'ConsumptionEnabled_' . $scale;
+
+    if (!@$this->GetIDForIdent($enabledIdent)) {
+        return;
+    }
+
+    $enabled = GetValue($this->GetIDForIdent($enabledIdent));
+
+    if (!$enabled) {
+        return;
+    }
+
+    $lastWeight = $this->ReadAttributeFloat('LastProcessedWeight_' . $scale);
+
+    $diff = $lastWeight - $newWeight;
+
+    if ($diff <= 0) {
+        return;
+    }
+
+    $todayIdent = 'ConsumptionToday_' . $scale;
+    $totalIdent = 'ConsumptionTotal_' . $scale;
+
+    if (@$this->GetIDForIdent($todayIdent)) {
+        $todayID = $this->GetIDForIdent($todayIdent);
+        SetValue($todayID, GetValue($todayID) + $diff);
+    }
+
+    if (@$this->GetIDForIdent($totalIdent)) {
+        $totalID = $this->GetIDForIdent($totalIdent);
+        SetValue($totalID, GetValue($totalID) + $diff);
+    }
 }
 
 
