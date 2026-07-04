@@ -31,14 +31,20 @@ class PoolChemie extends IPSModule
         $this->RegisterTimer('DailyResetTimer', 60000,'POOLCHEMIE_CheckDailyReset($_IPS["TARGET"]);');
 
         // Begrenzung der Verarbeitung
-        $this->RegisterPropertyFloat('MinWeightDelta', 0.02);      // 10 g
-        $this->RegisterPropertyInteger('MinUpdateInterval', 5);   // Sekunden
+        $this->RegisterPropertyFloat('MinWeightDelta', 0.02);     // 20 g
+        $this->RegisterPropertyInteger('MinUpdateInterval', 5);   // 5 Sekunden
+
+        $this->RegisterPropertyFloat('MinTareDelta', 0.001);
+        $this->RegisterPropertyInteger('TareUpdateInterval', 5);  // 5 Sekunden
 
         for ($i = 1; $i <= 4; $i++) {
             $this->RegisterAttributeFloat('LastProcessedWeight_' . $i, 0.0);
             $this->RegisterAttributeInteger('LastProcessedTime_' . $i, 0);
             $this->RegisterAttributeBoolean('HasProcessedWeight_' . $i, false);
-            
+
+            $this->RegisterAttributeFloat('LastProcessedTare_' . $i, 0.0);
+            $this->RegisterAttributeInteger('LastProcessedTareTime_' . $i, 0);
+            $this->RegisterAttributeBoolean('HasProcessedTare_' . $i, false);            
         }
 
         $this->ConnectParent('{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}');
@@ -396,20 +402,49 @@ private function ProcessWeight(int $scale, float $weight): void
 }
 
 
-    private function ProcessTare(int $scale, float $tare): void
-    {
-        $scaleCount = $this->ReadPropertyInteger('ScaleCount');
+private function ProcessTare(int $scale, float $tare): void
+{
+    $scaleCount = $this->ReadPropertyInteger('ScaleCount');
 
-        if ($scale > $scaleCount) {
+    if ($scale > $scaleCount) {
+        return;
+    }
+
+    $now = time();
+
+    $minTareDelta = $this->ReadPropertyFloat('MinTareDelta');
+    $tareUpdateInterval = $this->ReadPropertyInteger('TareUpdateInterval');
+
+    $hasLast = $this->ReadAttributeBoolean('HasProcessedTare_' . $scale);
+    $lastTare = $this->ReadAttributeFloat('LastProcessedTare_' . $scale);
+    $lastTime = $this->ReadAttributeInteger('LastProcessedTareTime_' . $scale);
+
+    if ($hasLast) {
+        $delta = abs($tare - $lastTare);
+        $age = $now - $lastTime;
+
+        if ($delta < $minTareDelta && $age < $tareUpdateInterval) {
             return;
         }
-
-        $ident = 'Tare_' . $scale;
-
-        if (@$this->GetIDForIdent($ident)) {
-            SetValue($this->GetIDForIdent($ident), $tare);
-        }
     }
+
+    $ident = 'Tare_' . $scale;
+    $id = @$this->GetIDForIdent($ident);
+
+    if ($id !== false) {
+        SetValue($id, $tare);
+    }
+
+    $this->WriteAttributeFloat('LastProcessedTare_' . $scale, $tare);
+    $this->WriteAttributeInteger('LastProcessedTareTime_' . $scale, $now);
+    $this->WriteAttributeBoolean('HasProcessedTare_' . $scale, true);
+
+    $this->SendDebug(
+        'Tara',
+        'Waage ' . $scale . ': Tara aktualisiert = ' . number_format($tare, 3) . ' kg',
+        0
+    );
+}
 
 
 private function UpdateWeightVariable(int $scale, float $weight): void
@@ -588,6 +623,25 @@ public function CheckDailyReset(): void
             'digits' => 3,
             'minimum' => 0,
             'maximum' => 10
+        ];
+
+        $elements[] = [
+            'type' => 'NumberSpinner',
+            'name' => 'MinTareDelta',
+            'caption' => 'Minimale Tara-Änderung',
+            'suffix' => ' kg',
+            'digits' => 3,
+            'minimum' => 0,
+            'maximum' => 10
+        ];
+
+        $elements[] = [
+            'type' => 'NumberSpinner',
+            'name' => 'TareUpdateInterval',
+            'caption' => 'Tara Aktualisierungsintervall',
+            'suffix' => ' Sekunden',
+            'minimum' => 1,
+            'maximum' => 3600
         ];
 
         for ($i = 1; $i <= $scaleCount; $i++) {
