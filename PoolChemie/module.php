@@ -27,6 +27,9 @@ class PoolChemie extends IPSModule
         $this->RegisterPropertyString('Scale3Type', 'Flockungsmittel');
         $this->RegisterPropertyString('Scale4Type', 'Aktivsauerstoff');
 
+        $this->RegisterAttributeString('LastDailyResetDate', '');
+        $this->RegisterTimer('DailyResetTimer', 60000,'POOLCHEMIE_CheckDailyReset($_IPS["TARGET"]);');
+
         // Begrenzung der Verarbeitung
         $this->RegisterPropertyFloat('MinWeightDelta', 0.02);      // 10 g
         $this->RegisterPropertyInteger('MinUpdateInterval', 5);   // Sekunden
@@ -35,8 +38,7 @@ class PoolChemie extends IPSModule
             $this->RegisterAttributeFloat('LastProcessedWeight_' . $i, 0.0);
             $this->RegisterAttributeInteger('LastProcessedTime_' . $i, 0);
             $this->RegisterAttributeBoolean('HasProcessedWeight_' . $i, false);
-            $this->RegisterAttributeString('LastDailyResetDate', '');
-            $this->RegisterTimer('DailyResetTimer', 60000,'POOLCHEMIE_CheckDailyReset($_IPS["TARGET"]);');
+            
         }
 
         $this->ConnectParent('{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}');
