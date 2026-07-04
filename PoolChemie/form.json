@@ -1,43 +1,186 @@
 {
-  "elements": [
-    {
-      "type": "SelectInstance",
-      "name": "MQTTInstance",
-      "caption": "MQTT Server",
-      "validModules": [
-        "{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}"
-      ]
-    },
-    {
-      "type": "NumberSpinner",
-      "name": "ScaleCount",
-      "caption": "Anzahl Waagen"
-    },
-    {
-      "type": "Select",
-      "name": "Scale1Type",
-      "caption": "Waage 1",
-      "options": [
-        { "caption": "Chlor", "value": "Chlor" },
-        { "caption": "pH Minus", "value": "pH Minus" },
-        { "caption": "pH Plus", "value": "pH Plus" },
-        { "caption": "Flockungsmittel", "value": "Flockungsmittel" },
-        { "caption": "Aktivsauerstoff", "value": "Aktivsauerstoff" },
-        { "caption": "Algizid", "value": "Algizid" }
-      ]
-    },
-    {
-      "type": "Select",
-      "name": "Scale2Type",
-      "caption": "Waage 2",
-      "options": [
-        { "caption": "Chlor", "value": "Chlor" },
-        { "caption": "pH Minus", "value": "pH Minus" },
-        { "caption": "pH Plus", "value": "pH Plus" },
-        { "caption": "Flockungsmittel", "value": "Flockungsmittel" },
-        { "caption": "Aktivsauerstoff", "value": "Aktivsauerstoff" },
-        { "caption": "Algizid", "value": "Algizid" }
-      ]
-    }
-  ]
+    "elements": [
+        {
+            "type": "SelectInstance",
+            "name": "MQTTInstance",
+            "caption": "MQTT Server",
+            "validModules": [
+                "{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}"
+            ]
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "BaseTopic",
+            "caption": "MQTT Basistopic"
+        },
+        {
+            "type": "Select",
+            "name": "ScaleCount",
+            "caption": "Anzahl Waagen",
+            "options": [
+                {
+                    "caption": "1",
+                    "value": 1
+                },
+                {
+                    "caption": "2",
+                    "value": 2
+                },
+                {
+                    "caption": "3",
+                    "value": 3
+                },
+                {
+                    "caption": "4",
+                    "value": 4
+                }
+            ]
+        },
+        {
+            "type": "Select",
+            "name": "Scale1Type",
+            "caption": "Waage 1 Chemie",
+            "options": [
+                {
+                    "caption": "Chlor",
+                    "value": "Chlor"
+                },
+                {
+                    "caption": "pH Minus",
+                    "value": "pH Minus"
+                },
+                {
+                    "caption": "pH Plus",
+                    "value": "pH Plus"
+                },
+                {
+                    "caption": "Flockungsmittel",
+                    "value": "Flockungsmittel"
+                },
+                {
+                    "caption": "Aktivsauerstoff",
+                    "value": "Aktivsauerstoff"
+                },
+                {
+                    "caption": "Algizid",
+                    "value": "Algizid"
+                },
+                {
+                    "caption": "Sonstiges",
+                    "value": "Sonstiges"
+                }
+            ]
+        },
+        {
+            "type": "Select",
+            "name": "Scale2Type",
+            "caption": "Waage 2 Chemie",
+            "options": [
+                {
+                    "caption": "Chlor",
+                    "value": "Chlor"
+                },
+                {
+                    "caption": "pH Minus",
+                    "value": "pH Minus"
+                },
+                {
+                    "caption": "pH Plus",
+                    "value": "pH Plus"
+                },
+                {
+                    "caption": "Flockungsmittel",
+                    "value": "Flockungsmittel"
+                },
+                {
+                    "caption": "Aktivsauerstoff",
+                    "value": "Aktivsauerstoff"
+                },
+                {
+                    "caption": "Algizid",
+                    "value": "Algizid"
+                },
+                {
+                    "caption": "Sonstiges",
+                    "value": "Sonstiges"
+                }
+            ]
+        },
+        {
+            "type": "Select",
+            "name": "Scale3Type",
+            "caption": "Waage 3 Chemie",
+            "options": [
+                {
+                    "caption": "Chlor",
+                    "value": "Chlor"
+                },
+                {
+                    "caption": "pH Minus",
+                    "value": "pH Minus"
+                },
+                {
+                    "caption": "pH Plus",
+                    "value": "pH Plus"
+                },
+                {
+                    "caption": "Flockungsmittel",
+                    "value": "Flockungsmittel"
+                },
+                {
+                    "caption": "Aktivsauerstoff",
+                    "value": "Aktivsauerstoff"
+                },
+                {
+                    "caption": "Algizid",
+                    "value": "Algizid"
+                },
+                {
+                    "caption": "Sonstiges",
+                    "value": "Sonstiges"
+                }
+            ]
+        },
+        {
+            "type": "Select",
+            "name": "Scale4Type",
+            "caption": "Waage 4 Chemie",
+            "options": [
+                {
+                    "caption": "Chlor",
+                    "value": "Chlor"
+                },
+                {
+                    "caption": "pH Minus",
+                    "value": "pH Minus"
+                },
+                {
+                    "caption": "pH Plus",
+                    "value": "pH Plus"
+                },
+                {
+                    "caption": "Flockungsmittel",
+                    "value": "Flockungsmittel"
+                },
+                {
+                    "caption": "Aktivsauerstoff",
+                    "value": "Aktivsauerstoff"
+                },
+                {
+                    "caption": "Algizid",
+                    "value": "Algizid"
+                },
+                {
+                    "caption": "Sonstiges",
+                    "value": "Sonstiges"
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "type": "Label",
+            "caption": "Nach dem Speichern werden die MQTT-Devices intern und versteckt angelegt."
+        }
+    ]
 }
