@@ -861,7 +861,7 @@ public function CheckThresholdNotification(bool $force = false): void
     $message = $this->BuildThresholdMessage($chemicals);
 
     $this->SendModuleNotification(
-        'PoolChemie Warnung',
+        '⚠️ PoolChemie:',
         $message
     );
 
