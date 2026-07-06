@@ -46,7 +46,7 @@ class PoolChemie extends IPSModule
         $this->RegisterPropertyInteger('NotificationViewID', 0);
         $this->RegisterPropertyInteger('NotificationControlID', 0); // 0 = automatisch finde
 
-        $this->RegisterTimer('ThresholdNotificationTimer',60000,'POOLCHEMIE_CheckThresholdNotification($_IPS["TARGET"]);');
+        $this->RegisterTimer('ThresholdNotificationTimer',60000,'POOLCHEMIE_CheckThresholdNotification($_IPS["TARGET"],false);');
 
 
         for ($i = 1; $i <= 4; $i++) {
@@ -806,13 +806,6 @@ private function CalculateConsumption(int $scale, float $oldWeight, float $newWe
     // Gewicht ist gestiegen oder gleich geblieben:
     // kein Verbrauch
     if ($diff <= 0) {
-        return;
-    }
-
-    $minDelta = $this->ReadPropertyFloat('MinWeightDelta');
-
-    // Kleine Schwankungen ignorieren
-    if ($diff < $minDelta) {
         return;
     }
 
