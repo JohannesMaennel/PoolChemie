@@ -119,11 +119,20 @@ private function RegisterWeightEvent(int $scale): void
     $weightID = @$this->GetIDForIdent('Weight_' . $scale);
 
     if ($weightID === false) {
+        $this->SendDebug(
+            'RegisterMessage',
+            'Waage ' . $scale . ': Gewicht-Variable existiert nicht.',
+            0
+        );
         return;
     }
 
     if ($this->IsScaleItemActive($scale, 'Weight')) {
         $this->RegisterMessage($weightID, VM_UPDATE);
+
+        if (defined('VM_CHANGE')) {
+            $this->RegisterMessage($weightID, VM_CHANGE);
+        }
 
         $this->SendDebug(
             'RegisterMessage',
@@ -132,6 +141,10 @@ private function RegisterWeightEvent(int $scale): void
         );
     } else {
         $this->UnregisterMessage($weightID, VM_UPDATE);
+
+        if (defined('VM_CHANGE')) {
+            $this->UnregisterMessage($weightID, VM_CHANGE);
+        }
 
         $this->SendDebug(
             'RegisterMessage',
@@ -586,6 +599,14 @@ private function ProcessWeight(int $scale, float $weight): void
     $this->WriteAttributeInteger('LastWrittenWeightTime_' . $scale, $now);
     $this->WriteAttributeBoolean('HasWrittenWeight_' . $scale, true);
 
+    
+    $this->SendDebug(
+        'ProcessWeight',
+        'Waage ' . $scale . ': schreibe Gewicht=' . number_format($weight, 3) . ' kg',
+        0
+    );
+
+
     // Das ist jetzt der entscheidende Auslöser.
     // SetValue auf Weight_X löst danach MessageSink() aus.
     $this->UpdateWeightVariable($scale, $weight);
@@ -595,9 +616,21 @@ public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
 {
     parent::MessageSink($TimeStamp, $SenderID, $Message, $Data);
 
-    if ($Message !== VM_UPDATE) {
+    $allowedMessages = [VM_UPDATE];
+
+    if (defined('VM_CHANGE')) {
+        $allowedMessages[] = VM_CHANGE;
+    }
+
+    if (!in_array($Message, $allowedMessages, true)) {
         return;
     }
+
+    $this->SendDebug(
+        'MessageSink',
+        'SenderID=' . $SenderID . ' Message=' . $Message,
+        0
+    );
 
     $scaleCount = $this->ReadPropertyInteger('ScaleCount');
 
@@ -618,6 +651,12 @@ public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
 
         if ($SenderID === $weightID) {
             $newWeight = (float)GetValue($weightID);
+
+            $this->SendDebug(
+                'OnChangeGewicht Trigger',
+                'Waage ' . $scale . ': neuer Wert=' . number_format($newWeight, 3) . ' kg',
+                0
+            );
 
             $this->OnWeightVariableChanged($scale, $newWeight);
 
@@ -671,6 +710,15 @@ private function OnWeightVariableChanged(int $scale, float $newWeight): void
     $this->WriteAttributeFloat('LastProcessedWeight_' . $scale, $newWeight);
     $this->WriteAttributeInteger('LastProcessedTime_' . $scale, time());
     $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, true);
+
+    $this->SendDebug(
+        'Verbrauch Check',
+        'Waage ' . $scale .
+        ': Alt=' . number_format($oldWeight, 3) .
+        ' kg Neu=' . number_format($newWeight, 3) .
+        ' kg Aktiv=' . ($consumptionEnabled ? 'JA' : 'NEIN'),
+        0
+    );
 }
 
 private function ProcessTare(int $scale, float $tare): void
@@ -789,6 +837,53 @@ private function CalculateConsumption(int $scale, float $oldWeight, float $newWe
     );
 }
 
+public function CheckDailyReset(): void
+{
+    $today = date('Y-m-d');
+    $lastReset = $this->ReadAttributeString('LastDailyResetDate');
+
+    if ($lastReset === $today) {
+        return;
+    }
+
+    // Beim allerersten Start nur Datum setzen, aber nichts verschieben
+    if ($lastReset === '') {
+        $this->WriteAttributeString('LastDailyResetDate', $today);
+        return;
+    }
+
+    $scaleCount = $this->ReadPropertyInteger('ScaleCount');
+
+    if ($scaleCount < 1) {
+        $scaleCount = 1;
+    }
+
+    if ($scaleCount > 4) {
+        $scaleCount = 4;
+    }
+
+    for ($scale = 1; $scale <= $scaleCount; $scale++) {
+        $todayID = @$this->GetIDForIdent('ConsumptionToday_' . $scale);
+        $dayID = @$this->GetIDForIdent('ConsumptionDay_' . $scale);
+
+        if ($todayID !== false && $dayID !== false) {
+            $todayValue = GetValue($todayID);
+
+            SetValue($dayID, $todayValue);
+            SetValue($todayID, 0.0);
+        }
+    }
+
+    $this->WriteAttributeString('LastDailyResetDate', $today);
+
+    $this->SendDebug(
+        'Tageswechsel',
+        'Tagesverbrauch wurde abgeschlossen und Verbrauch Heute wurde zurückgesetzt.',
+        0
+    );
+}
+
+// Benachrichtigungssystem für Bestandsschwelle unterschritten
 private function GetNotificationControlID(): int
 {
     $manualID = $this->ReadPropertyInteger('NotificationControlID');
@@ -967,21 +1062,11 @@ private function BuildThresholdMessage(array $chemicals): string
         '. Bitte diese Chemikalien nachbestellen.';
 }
 
-public function CheckDailyReset(): void
+
+
+// Konfigurationsformular Konsole
+public function GetConfigurationForm()
 {
-    $today = date('Y-m-d');
-    $lastReset = $this->ReadAttributeString('LastDailyResetDate');
-
-    if ($lastReset === $today) {
-        return;
-    }
-
-    // Beim allerersten Start nur Datum setzen, aber nichts verschieben
-    if ($lastReset === '') {
-        $this->WriteAttributeString('LastDailyResetDate', $today);
-        return;
-    }
-
     $scaleCount = $this->ReadPropertyInteger('ScaleCount');
 
     if ($scaleCount < 1) {
@@ -992,253 +1077,220 @@ public function CheckDailyReset(): void
         $scaleCount = 4;
     }
 
-    for ($scale = 1; $scale <= $scaleCount; $scale++) {
-        $todayID = @$this->GetIDForIdent('ConsumptionToday_' . $scale);
-        $dayID = @$this->GetIDForIdent('ConsumptionDay_' . $scale);
+    $elements = [];
 
-        if ($todayID !== false && $dayID !== false) {
-            $todayValue = GetValue($todayID);
+    $elements[] = [
+        'type' => 'ValidationTextBox',
+        'name' => 'BaseTopic',
+        'caption' => 'MQTT Basistopic'
+    ];
 
-            SetValue($dayID, $todayValue);
-            SetValue($todayID, 0.0);
-        }
-    }
+    $elements[] = [
+        'type' => 'ValidationTextBox',
+        'name' => 'NotificationTime',
+        'caption' => 'Benachrichtigungszeit HH:MM'
+    ];
 
-    $this->WriteAttributeString('LastDailyResetDate', $today);
+    $elements[] = [
+        'type' => 'CheckBox',
+        'name' => 'NotificationEnabled',
+        'caption' => 'Benachrichtigung aktivieren'
+    ];
 
-    $this->SendDebug(
-        'Tageswechsel',
-        'Tagesverbrauch wurde abgeschlossen und Verbrauch Heute wurde zurückgesetzt.',
-        0
-    );
-}
-
-    public function GetConfigurationForm()
-    {
-        $scaleCount = $this->ReadPropertyInteger('ScaleCount');
-
-        if ($scaleCount < 1) {
-            $scaleCount = 1;
-        }
-
-        if ($scaleCount > 4) {
-            $scaleCount = 4;
-        }
-
-        $elements = [];
-
-        $elements[] = [
-            'type' => 'ValidationTextBox',
-            'name' => 'BaseTopic',
-            'caption' => 'MQTT Basistopic'
-        ];
-
-        $elements[] = [
-            'type' => 'ValidationTextBox',
-            'name' => 'NotificationTime',
-            'caption' => 'Benachrichtigungszeit HH:MM'
-        ];
-
-        $elements[] = [
-            'type' => 'CheckBox',
-            'name' => 'NotificationEnabled',
-            'caption' => 'Benachrichtigung aktivieren'
-        ];
-
-        $elements[] = [
-            'type' => 'SelectInstance',
-            'name' => 'NotificationViewID',
-            'caption' => 'WebFront für Push-Benachrichtigung'
-        ];
+    $elements[] = [
+        'type' => 'SelectInstance',
+        'name' => 'NotificationViewID',
+        'caption' => 'WebFront für Push-Benachrichtigung'
+    ];
 
         
-        $elements[] = [
-            'type' => 'SelectInstance',
-            'name' => 'NotificationControlID',
-            'caption' => 'Notification Control Instanz (optional)'
-        ];
+    $elements[] = [
+        'type' => 'SelectInstance',
+        'name' => 'NotificationControlID',
+        'caption' => 'Notification Control Instanz (optional)'
+    ];
 
 
 
+    $elements[] = [
+        'type' => 'Select',
+        'name' => 'ScaleCount',
+        'caption' => 'Anzahl Waagen',
+        'options' => [
+            [
+                'caption' => '1',
+                'value' => 1
+            ],
+            [
+                'caption' => '2',
+                'value' => 2
+            ],
+            [
+                'caption' => '3',
+                'value' => 3
+            ],
+            [
+                'caption' => '4',
+                'value' => 4
+            ]
+        ]
+    ];
+
+    $elements[] = [
+        'type' => 'NumberSpinner',
+        'name' => 'MinUpdateInterval',
+        'caption' => 'Minimales Aktualisierungsintervall',
+        'suffix' => ' Sekunden',
+        'minimum' => 1,
+        'maximum' => 3600
+    ];
+
+    $elements[] = [
+        'type' => 'NumberSpinner',
+        'name' => 'MinWeightDelta',
+        'caption' => 'Minimale Gewichtsänderung',
+        'suffix' => ' kg',
+        'digits' => 3,
+        'minimum' => 0,
+        'maximum' => 10
+    ];
+
+    $elements[] = [
+        'type' => 'NumberSpinner',
+        'name' => 'MinTareDelta',
+        'caption' => 'Minimale Tara-Änderung',
+        'suffix' => ' kg',
+        'digits' => 3,
+        'minimum' => 0,
+        'maximum' => 10
+    ];
+
+    $elements[] = [
+        'type' => 'NumberSpinner',
+        'name' => 'TareUpdateInterval',
+        'caption' => 'Tara Aktualisierungsintervall',
+        'suffix' => ' Sekunden',
+        'minimum' => 1,
+        'maximum' => 3600
+    ];
+
+    for ($i = 1; $i <= $scaleCount; $i++) {
         $elements[] = [
             'type' => 'Select',
-            'name' => 'ScaleCount',
-            'caption' => 'Anzahl Waagen',
-            'options' => [
-                [
-                    'caption' => '1',
-                    'value' => 1
-                ],
-                [
-                    'caption' => '2',
-                    'value' => 2
-                ],
-                [
-                    'caption' => '3',
-                    'value' => 3
-                ],
-                [
-                    'caption' => '4',
-                    'value' => 4
-                ]
-            ]
+            'name' => 'Scale' . $i . 'Type',
+            'caption' => 'Waage ' . $i . ' Chemie',
+            'options' => $this->GetChemicalOptions()
         ];
 
         $elements[] = [
             'type' => 'NumberSpinner',
-            'name' => 'MinUpdateInterval',
-            'caption' => 'Minimales Aktualisierungsintervall',
-            'suffix' => ' Sekunden',
-            'minimum' => 1,
-            'maximum' => 3600
-        ];
-
-        $elements[] = [
-            'type' => 'NumberSpinner',
-            'name' => 'MinWeightDelta',
-            'caption' => 'Minimale Gewichtsänderung',
+            'name' => 'Scale' . $i . 'Threshold',
+            'caption' => 'Waage ' . $i . ' unterer Schwellwert Nachricht',
             'suffix' => ' kg',
             'digits' => 3,
             'minimum' => 0,
-            'maximum' => 10
+            'maximum' => 1000
         ];
 
         $elements[] = [
-            'type' => 'NumberSpinner',
-            'name' => 'MinTareDelta',
-            'caption' => 'Minimale Tara-Änderung',
-            'suffix' => ' kg',
-            'digits' => 3,
-            'minimum' => 0,
-            'maximum' => 10
-        ];
-
-        $elements[] = [
-            'type' => 'NumberSpinner',
-            'name' => 'TareUpdateInterval',
-            'caption' => 'Tara Aktualisierungsintervall',
-            'suffix' => ' Sekunden',
-            'minimum' => 1,
-            'maximum' => 3600
-        ];
-
-        for ($i = 1; $i <= $scaleCount; $i++) {
-            $elements[] = [
-                'type' => 'Select',
-                'name' => 'Scale' . $i . 'Type',
-                'caption' => 'Waage ' . $i . ' Chemie',
-                'options' => $this->GetChemicalOptions()
-            ];
-
-            $elements[] = [
-                'type' => 'NumberSpinner',
-                'name' => 'Scale' . $i . 'Threshold',
-                'caption' => 'Waage ' . $i . ' unterer Schwellwert Nachricht',
-                'suffix' => ' kg',
-                'digits' => 3,
-                'minimum' => 0,
-                'maximum' => 1000
-            ];
-
-            $elements[] = [
-                'type' => 'List',
-                'name' => 'Scale' . $i . 'Items',
-                'caption' => 'Waage ' . $i . ' Variablen',
-                'rowCount' => 9,
-                'add' => false,
-                'delete' => false,
-                'columns' => [
-                    [
-                        'caption' => 'Index',
-                        'name' => 'Index',
-                        'width' => '70px',
-                        'edit' => [
-                            'type' => 'NumberSpinner',
-                            'enabled' => false
-                        ]
-                    ],
-                    [
-                        'caption' => 'Name',
-                        'name' => 'Name',
-                        'width' => '300px',
-                        'edit' => [
-                            'type' => 'ValidationTextBox',
-                            'enabled' => false
-                        ]
-                    ],
-                    [
-                        'caption' => 'Ident',
-                        'name' => 'Ident',
-                        'width' => '180px',
-                        'edit' => [
-                            'type' => 'ValidationTextBox',
-                            'enabled' => false
-                        ]
-                    ],
-                    [
-                        'caption' => 'Aktiv',
-                        'name' => 'Active',
-                        'width' => '100px',
-                        'edit' => [
-                            'type' => 'CheckBox'
-                        ]
+            'type' => 'List',
+            'name' => 'Scale' . $i . 'Items',
+            'caption' => 'Waage ' . $i . ' Variablen',
+            'rowCount' => 9,
+            'add' => false,
+            'delete' => false,
+            'columns' => [
+                [
+                    'caption' => 'Index',
+                    'name' => 'Index',
+                    'width' => '70px',
+                    'edit' => [
+                        'type' => 'NumberSpinner',
+                        'enabled' => false
                     ]
                 ],
-                'values' => $this->GetScaleItems($i)
-            ];
-        }
-
-
-        $actions = [];
-
-        $actions[] = [
-            'type' => 'Button',
-            'caption' => 'Push-Nachricht prüfen',
-            'onClick' => 'POOLCHEMIE_CheckThresholdNotification(' . $this->InstanceID . ', true);'
-        ];
-
-        $actions[] = [
-            'type' => 'Label',
-            'caption' => 'Hinweis: Nach Änderung der Anzahl Waagen bitte Übernehmen klicken. Danach wird die Anzahl der Chemie-Auswahllisten angepasst.'
-        ];
-
-        return json_encode([
-            'elements' => $elements,
-            'actions' => $actions
-        ]);
-    }
-
-    private function GetChemicalOptions(): array
-    {
-        return [
-            [
-                'caption' => 'Chlor',
-                'value' => 'Chlor'
+                [
+                    'caption' => 'Name',
+                    'name' => 'Name',
+                    'width' => '300px',
+                    'edit' => [
+                        'type' => 'ValidationTextBox',
+                        'enabled' => false
+                    ]
+                ],
+                [
+                    'caption' => 'Ident',
+                    'name' => 'Ident',
+                    'width' => '180px',
+                    'edit' => [
+                        'type' => 'ValidationTextBox',
+                        'enabled' => false
+                    ]
+                ],
+                [
+                    'caption' => 'Aktiv',
+                    'name' => 'Active',
+                    'width' => '100px',
+                    'edit' => [
+                        'type' => 'CheckBox'
+                    ]
+                ]
             ],
-            [
-                'caption' => 'pH Minus',
-                'value' => 'pH Minus'
-            ],
-            [
-                'caption' => 'pH Plus',
-                'value' => 'pH Plus'
-            ],
-            [
-                'caption' => 'Flockungsmittel',
-                'value' => 'Flockungsmittel'
-            ],
-            [
-                'caption' => 'Aktivsauerstoff',
-                'value' => 'Aktivsauerstoff'
-            ],
-            [
-                'caption' => 'Algizid',
-                'value' => 'Algizid'
-            ],
-            [
-                'caption' => 'Sonstiges',
-                'value' => 'Sonstiges'
-            ]
+            'values' => $this->GetScaleItems($i)
         ];
     }
+
+
+    $actions = [];
+
+    $actions[] = [
+        'type' => 'Button',
+        'caption' => 'Push-Nachricht prüfen',
+        'onClick' => 'POOLCHEMIE_CheckThresholdNotification(' . $this->InstanceID . ', true);'
+    ];
+
+    $actions[] = [
+        'type' => 'Label',
+        'caption' => 'Hinweis: Nach Änderung der Anzahl Waagen bitte Übernehmen klicken. Danach wird die Anzahl der Chemie-Auswahllisten angepasst.'
+    ];
+
+    return json_encode([
+        'elements' => $elements,
+        'actions' => $actions
+    ]);
+}
+
+private function GetChemicalOptions(): array
+{
+    return [
+        [
+            'caption' => 'Chlor',
+            'value' => 'Chlor'
+        ],
+        [
+            'caption' => 'pH Minus',
+            'value' => 'pH Minus'
+        ],
+        [
+            'caption' => 'pH Plus',
+            'value' => 'pH Plus'
+        ],
+        [
+            'caption' => 'Flockungsmittel',
+            'value' => 'Flockungsmittel'
+        ],
+        [
+            'caption' => 'Aktivsauerstoff',
+            'value' => 'Aktivsauerstoff'
+        ],
+        [
+            'caption' => 'Algizid',
+            'value' => 'Algizid'
+        ],
+        [
+            'caption' => 'Sonstiges',
+            'value' => 'Sonstiges'
+        ]
+    ];
+}
 }
