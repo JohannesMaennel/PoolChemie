@@ -62,16 +62,16 @@ mqtt:
             id(tare_w2) = 0;
 
 
-i2c:
-  sda: GPIO21
-  scl: GPIO22
-  scan: true
+# i2c:
+#   sda: GPIO21
+#   scl: GPIO22
+#   scan: true
 
 globals:
-  - id: aktive_waage
-    type: int
-    restore_value: yes
-    initial_value: "1"
+  # - id: aktive_waage
+  #   type: int
+  #   restore_value: yes
+  #   initial_value: "1"
 
   - id: nullpunkt_w1
     type: float
@@ -114,10 +114,10 @@ globals:
     initial_value: "0"
 
 
-font:
-  - file: "gfonts://Roboto"
-    id: font16
-    size: 16
+# font:
+#   - file: "gfonts://Roboto"
+#     id: font16
+#     size: 16
 
 sensor:
   - platform: uptime
@@ -255,64 +255,64 @@ binary_sensor:
   - platform: status
     name: "Online"
 
-  - platform: gpio
-    name: "Anzeige wechseln"
+  # - platform: gpio
+  #   name: "Anzeige wechseln"
 
-    pin:
-      number: GPIO32
-      mode:
-        input: true
-        pullup: true
-      inverted: true
+  #   pin:
+  #     number: GPIO32
+  #     mode:
+  #       input: true
+  #       pullup: true
+  #     inverted: true
 
-    on_press:
-      then:
-        - lambda: |-
-            if (id(aktive_waage) == 1)
-              id(aktive_waage) = 2;
-            else
-              id(aktive_waage) = 1;
+  #   on_press:
+  #     then:
+  #       - lambda: |-
+  #           if (id(aktive_waage) == 1)
+  #             id(aktive_waage) = 2;
+  #           else
+  #             id(aktive_waage) = 1;
 
-  - platform: gpio
-    name: "Tare Taste"
+  # - platform: gpio
+  #   name: "Tare Taste"
 
-    pin:
-      number: GPIO33
-      mode:
-        input: true
-        pullup: true
-      inverted: true
+  #   pin:
+  #     number: GPIO33
+  #     mode:
+  #       input: true
+  #       pullup: true
+  #     inverted: true
 
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
+  #   filters:
+  #     - delayed_on: 50ms
+  #     - delayed_off: 50ms
 
-    on_press:
-      then:
-        - logger.log: "Tare gedrueckt"
-        - lambda: |-
-            if(id(aktive_waage) == 1)
-            {
-              ESP_LOGI("TARE", "Waage1=%.3f TaraAlt=%.3f",
-                      id(waage1).state,
-                      id(tare_w1));
+  #   on_press:
+  #     then:
+  #       - logger.log: "Tare gedrueckt"
+  #       - lambda: |-
+  #           if(id(aktive_waage) == 1)
+  #           {
+  #             ESP_LOGI("TARE", "Waage1=%.3f TaraAlt=%.3f",
+  #                     id(waage1).state,
+  #                     id(tare_w1));
 
-              id(tare_w1) += id(waage1).state;
+  #             id(tare_w1) += id(waage1).state;
 
-              ESP_LOGI("TARE", "TaraNeu=%.3f",
-                      id(tare_w1));
-            }
-            else
-            {
-              ESP_LOGI("TARE", "Waage2=%.3f TaraAlt=%.3f",
-                      id(waage2).state,
-                      id(tare_w2));
+  #             ESP_LOGI("TARE", "TaraNeu=%.3f",
+  #                     id(tare_w1));
+  #           }
+  #           else
+  #           {
+  #             ESP_LOGI("TARE", "Waage2=%.3f TaraAlt=%.3f",
+  #                     id(waage2).state,
+  #                     id(tare_w2));
 
-              id(tare_w2) += id(waage2).state;
+  #             id(tare_w2) += id(waage2).state;
 
-              ESP_LOGI("TARE", "TaraNeu=%.3f",
-                      id(tare_w2));
-            }  
+  #             ESP_LOGI("TARE", "TaraNeu=%.3f",
+  #                     id(tare_w2));
+  #           }  
   
 number:
   - platform: template
@@ -388,30 +388,30 @@ button:
       - lambda: |-
           id(tare_w2) = 0;
 
-display:
-  - platform: ssd1306_i2c
-    model: "SSD1306 128x64"
-    address: 0x3C
-    update_interval: 1s
+# display:
+#   - platform: ssd1306_i2c
+#     model: "SSD1306 128x64"
+#     address: 0x3C
+#     update_interval: 1s
 
-    lambda: |-
-      if (id(aktive_waage) == 1)
-      {
-        it.printf(0, 0, id(font16), "Waage 1");
-        it.printf(0, 20, id(font16), "%.2f", id(waage1).state);
-        it.printf(50, 20, id(font16), " / %.2f kg", id(tare_w1));
-      }
-      else
-      {
-        it.printf(0, 0, id(font16), "Waage 2");
-        it.printf(0, 20, id(font16), "%.2f kg", id(waage2).state);
-        it.printf(50, 20, id(font16), "T: %.2f", id(tare_w2));
-      }
+#     lambda: |-
+#       if (id(aktive_waage) == 1)
+#       {
+#         it.printf(0, 0, id(font16), "Waage 1");
+#         it.printf(0, 20, id(font16), "%.2f", id(waage1).state);
+#         it.printf(50, 20, id(font16), " / %.2f kg", id(tare_w1));
+#       }
+#       else
+#       {
+#         it.printf(0, 0, id(font16), "Waage 2");
+#         it.printf(0, 20, id(font16), "%.2f kg", id(waage2).state);
+#         it.printf(50, 20, id(font16), "T: %.2f", id(tare_w2));
+#       }
 
-      it.printf(
-        0,
-        48,
-        id(font16),
-        "%s",
-        id(ip_address).state.c_str()
-      );
+#       it.printf(
+#         0,
+#         48,
+#         id(font16),
+#         "%s",
+#         id(ip_address).state.c_str()
+#       );
