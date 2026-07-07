@@ -180,7 +180,10 @@ sensor:
     update_interval: 1s
     
     filters:
-      - delta: 0.01 
+      - delta: 0.01
+      - heartbeat: 
+          period: 60s
+          optimistic: true  
 
 
   - platform: template
@@ -209,6 +212,9 @@ sensor:
 
     filters:
       - delta: 0.01
+      - heartbeat: 
+          period: 60s
+          optimistic: true
       
   - platform: template
     id: tare_sensor_w1
@@ -223,6 +229,9 @@ sensor:
     
     filters:
       - delta: 0.01
+      - heartbeat: 
+          period: 60s
+          optimistic: true
 
   - platform: template
     id: tare_sensor_w2
@@ -237,6 +246,9 @@ sensor:
     
     filters:
       - delta: 0.01
+      - heartbeat: 
+          period: 60s
+          optimistic: true
 
 text_sensor:
   - platform: wifi_info
