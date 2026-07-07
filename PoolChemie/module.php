@@ -5,274 +5,97 @@ declare(strict_types=1);
 class PoolChemie extends IPSModule
 {
 
-    private const MQTT_SERVER_MODULE = '{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}';
+private const MQTT_SERVER_MODULE = '{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}';
 
     // Daten vom MQTT Server zum PoolChemie Modul
-    private const MQTT_RX_DATA_ID = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
+private const MQTT_RX_DATA_ID = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
 
     // Daten vom PoolChemie Modul zum MQTT Server
-    private const MQTT_TX_DATA_ID = '{043EA491-0325-4ADD-8FC2-A30C8EEB4D3F}';
+private const MQTT_TX_DATA_ID = '{043EA491-0325-4ADD-8FC2-A30C8EEB4D3F}';
 
 
 
-    public function Create()
-    {
-        parent::Create();
+public function Create()
+{
+    parent::Create();
 
+    //MQTT Topic    
+    $this->RegisterPropertyString('BaseTopic', 'Pool/Chemiewaage');
+    //Anzahl Waagen
+    $this->RegisterPropertyInteger('ScaleCount', 2);
+    $this->RegisterPropertyString('ScaleConfig',json_encode($this->GetDefaultScaleConfig()));
+
+    // Verbrauchslogging
+    $this->RegisterAttributeString('LastDailyResetDate', '');
+    $this->RegisterTimer('DailyResetTimer', 60000,'POOLCHEMIE_CheckDailyReset($_IPS["TARGET"]);');
+
+    // Begrenzung der Verarbeitung
+    $this->RegisterPropertyFloat('MinWeightDelta', 0.02);     // 20 g
+    $this->RegisterPropertyInteger('MinUpdateInterval', 5);   // 5 Sekunden
+    $this->RegisterPropertyFloat('MaxUpdateDiff', 0.5);       // Gewichtssprünge größer 0,5kg werden ignoriert in der Verbrauchsberechnung
+
+    // Nachrichtensystem        
+    $this->RegisterPropertyString('NotificationTime', '09:00');
+    $this->RegisterAttributeString('LastThresholdNotificationDate', '');
+    $this->RegisterTimer('ThresholdNotificationTimer',60000,'POOLCHEMIE_CheckThresholdNotification($_IPS["TARGET"],false);');
+    $this->RegisterPropertyBoolean('NotificationEnabled', true);
+    $this->RegisterPropertyInteger('NotificationViewID', 0);
+    $this->RegisterPropertyInteger('NotificationControlID', 0); // 0 = automatisch finde
+
+    // Debuging einschalen
+    $this->RegisterPropertyBoolean('DebugEnabled', false);
+
+        $this->RegisterPropertyString('ScaleConfig',json_encode($this->GetDefaultScaleConfig()));
+
+    for ($i = 1; $i <= 4; $i++) {               
+        $this->RegisterAttributeBoolean('IgnoreNextConsumption_' . $i, false);
         
-        $this->RegisterPropertyString('BaseTopic', 'Pool/Chemiewaage');
-        $this->RegisterPropertyInteger('ScaleCount', 2);
-
-        $this->RegisterPropertyString('Scale1Type', 'Chlor');
-        $this->RegisterPropertyString('Scale2Type', 'pH Minus');
-        $this->RegisterPropertyString('Scale3Type', 'Flockungsmittel');
-        $this->RegisterPropertyString('Scale4Type', 'Aktivsauerstoff');
-
-        $this->RegisterAttributeString('LastDailyResetDate', '');
-        $this->RegisterTimer('DailyResetTimer', 60000,'POOLCHEMIE_CheckDailyReset($_IPS["TARGET"]);');
-
-        // Begrenzung der Verarbeitung
-        $this->RegisterPropertyFloat('MinWeightDelta', 0.02);     // 20 g
-        $this->RegisterPropertyInteger('MinUpdateInterval', 5);   // 5 Sekunden
-
-        $this->RegisterPropertyFloat('MinTareDelta', 0.001);
-        $this->RegisterPropertyInteger('TareUpdateInterval', 5);  // 5 Sekunden
-
-        // Nachrichtensystem        
-        $this->RegisterPropertyString('NotificationTime', '09:00');
-        $this->RegisterAttributeString('LastThresholdNotificationDate', '');
-        
-        $this->RegisterPropertyBoolean('NotificationEnabled', true);
-        $this->RegisterPropertyInteger('NotificationViewID', 0);
-        $this->RegisterPropertyInteger('NotificationControlID', 0); // 0 = automatisch finde
-
-        $this->RegisterTimer('ThresholdNotificationTimer',60000,'POOLCHEMIE_CheckThresholdNotification($_IPS["TARGET"],false);');
-
-
-        for ($i = 1; $i <= 4; $i++) {
-            $this->RegisterAttributeFloat('LastProcessedWeight_' . $i, 0.0);
-            $this->RegisterAttributeInteger('LastProcessedTime_' . $i, 0);
-            $this->RegisterAttributeBoolean('HasProcessedWeight_' . $i, false);
-
-            
-            $this->RegisterAttributeFloat('LastWrittenWeight_' . $i, 0.0);
-            $this->RegisterAttributeInteger('LastWrittenWeightTime_' . $i, 0);
-            $this->RegisterAttributeBoolean('HasWrittenWeight_' . $i, false);
-
-            $this->RegisterAttributeFloat('LastProcessedTare_' . $i, 0.0);
-            $this->RegisterAttributeInteger('LastProcessedTareTime_' . $i, 0);
-            $this->RegisterAttributeBoolean('HasProcessedTare_' . $i, false);            
-
-            $this->RegisterPropertyString('Scale' . $i . 'Items',json_encode($this->GetDefaultScaleItems()));
-
-            $this->RegisterPropertyFloat('Scale' . $i . 'Threshold', 5.0);
-        }
-
-        $this->ConnectParent('{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}');
     }
 
-
-    public function Destroy()
-    {
-        parent::Destroy();
-    }
-
-    public function ApplyChanges()
-    {
-        parent::ApplyChanges();
-
-        $this->RegisterProfiles();
-
-        $scaleCount = $this->ReadPropertyInteger('ScaleCount');
-
-        if ($scaleCount < 1) {
-            $scaleCount = 1;
-        }
-
-        if ($scaleCount > 4) {
-            $scaleCount = 4;
-        }
-
-
-        for ($i = 1; $i <= $scaleCount; $i++) {
-            $this->CreateScaleVariables($i);
-            $this->RegisterWeightEvent($i);
-
-
-            if ($this->IsScaleItemActive($i, 'ConsumptionTotal')) {
-                $this->EnableArchiveForConsumptionTotal($i);
-            }
-        }
-
-
-        $baseTopic = rtrim($this->ReadPropertyString('BaseTopic'), '/');
-
-        $pattern = '.*' . preg_quote($baseTopic, '/') . '.*';
-
-        $this->SetReceiveDataFilter($pattern);
-
-        IPS_LogMessage('PoolChemie', 'ApplyChanges ausgeführt. MQTT Filter: ' . $pattern);
+    $this->ConnectParent('{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}');
 }
 
-private function RegisterWeightEvent(int $scale): void
+public function Destroy()
 {
-    $weightID = @$this->GetIDForIdent('Weight_' . $scale);
-
-    if ($weightID === false) {
-        $this->SendDebug(
-            'RegisterMessage',
-            'Waage ' . $scale . ': Gewicht-Variable existiert nicht.',
-            0
-        );
-        return;
-    }
-
-    if ($this->IsScaleItemActive($scale, 'Weight')) {
-        $this->RegisterMessage($weightID, VM_UPDATE);
-
-        if (defined('VM_CHANGE')) {
-            $this->RegisterMessage($weightID, VM_CHANGE);
-        }
-
-        $this->SendDebug(
-            'RegisterMessage',
-            'Waage ' . $scale . ': Gewicht-Variable registriert. ID=' . $weightID,
-            0
-        );
-    } else {
-        $this->UnregisterMessage($weightID, VM_UPDATE);
-
-        if (defined('VM_CHANGE')) {
-            $this->UnregisterMessage($weightID, VM_CHANGE);
-        }
-
-        $this->SendDebug(
-            'RegisterMessage',
-            'Waage ' . $scale . ': Gewicht-Variable abgemeldet. ID=' . $weightID,
-            0
-        );
-    }
+    parent::Destroy();
 }
 
-private function GetDefaultScaleItems(): array
+public function ApplyChanges()
 {
-    return [
-        [
-            'Index'  => 1,
-            'Ident'  => 'Weight',
-            'Name'   => 'Gewicht',
-            'Active' => true
-        ],
-        [
-            'Index'  => 2,
-            'Ident'  => 'Tare',
-            'Name'   => 'Tara',
-            'Active' => true
-        ],
-        [
-            'Index'  => 3,
-            'Ident'  => 'ConsumptionToday',
-            'Name'   => 'Verbrauch Heute',
-            'Active' => true
-        ],
-        [
-            'Index'  => 4,
-            'Ident'  => 'ConsumptionDay',
-            'Name'   => 'Verbrauch Tag',
-            'Active' => true
-        ],
-        [
-            'Index'  => 5,
-            'Ident'  => 'ConsumptionTotal',
-            'Name'   => 'Verbrauch Gesamt',
-            'Active' => true
-        ],
-        [
-            'Index'  => 6,
-            'Ident'  => 'ConsumptionEnabled',
-            'Name'   => 'Verbrauch aktiv',
-            'Active' => true
-        ],
-        [
-            'Index'  => 7,
-            'Ident'  => 'TareButton',
-            'Name'   => 'Tara auslösen',
-            'Active' => true
-        ],
-        [
-            'Index'  => 8,
-            'Ident'  => 'ClearTareButton',
-            'Name'   => 'Tara löschen',
-            'Active' => true
-        ],
-        [
-            'Index'  => 9,
-            'Ident'  => 'ResetTotalButton',
-            'Name'   => 'Gesamtverbrauch löschen',
-            'Active' => true
-        ]
-    ];
-}
+    parent::ApplyChanges();
 
-private function GetScaleItems(int $scale): array
-{
-    $json = $this->ReadPropertyString('Scale' . $scale . 'Items');
-    $items = json_decode($json, true);
+    $this->RegisterProfiles();
 
-    if (!is_array($items)) {
-        return $this->GetDefaultScaleItems();
+    $scaleCount = $this->ReadPropertyInteger('ScaleCount');
+
+    if ($scaleCount < 1) {
+        $scaleCount = 1;
     }
 
-    return $items;
-}
+    if ($scaleCount > 4) {
+        $scaleCount = 4;
+    }
 
-private function IsScaleItemActive(int $scale, string $ident): bool
-{
-    foreach ($this->GetScaleItems($scale) as $item) {
-        if (($item['Ident'] ?? '') === $ident) {
-            return (bool)($item['Active'] ?? false);
+
+    for ($i = 1; $i <= $scaleCount; $i++) {
+        $this->CreateScaleVariables($i);
+
+
+        if ($this->IsScaleItemActive($i, 'ConsumptionTotal')) {
+            $this->EnableArchiveForConsumptionTotal($i);
         }
     }
 
-    return false;
+
+    $baseTopic = rtrim($this->ReadPropertyString('BaseTopic'), '/');
+
+    $pattern = '.*' . preg_quote($baseTopic, '/') . '.*';
+
+    $this->SetReceiveDataFilter($pattern);
+
+    IPS_LogMessage('PoolChemie', 'ApplyChanges ausgeführt. MQTT Filter: ' . $pattern);
 }
-
-private function EnableArchiveForConsumptionTotal(int $scale): void
-{
-    $ident = 'ConsumptionTotal_' . $scale;
-    $variableID = @$this->GetIDForIdent($ident);
-
-    if ($variableID === false) {
-        return;
-    }
-
-    $archiveID = @IPS_GetInstanceIDByName('Archive', 0);
-
-    if ($archiveID === false) {
-        $archiveID = @IPS_GetInstanceIDByName('Archiv', 0);
-    }
-
-    if ($archiveID === false) {
-        $this->SendDebug(
-            'Archiv',
-            'Keine Archiv-Control-Instanz gefunden.',
-            0
-        );
-        return;
-    }
-
-    AC_SetLoggingStatus($archiveID, $variableID, true);
-    AC_SetAggregationType($archiveID, $variableID, 1);
-    AC_SetCounterIgnoreZeros($archiveID, $variableID, true);
-    IPS_ApplyChanges($archiveID);
-
-    $this->SendDebug(
-        'Archiv',
-        'Archivierung für ' . $ident . ' aktiviert. Archiv-ID=' . $archiveID,
-        0
-    );
-}
-
+// Variablenprofile Registrienen
 private function RegisterProfiles(): void
 {
     if (!IPS_VariableProfileExists('POOLCHEMIE.Kilogramm')) {
@@ -303,14 +126,9 @@ private function RegisterProfiles(): void
         );
     }
 }
-
-private function GetChemicalName(int $scale): string
-{
-    return $this->ReadPropertyString('Scale' . $scale . 'Type');
-}
-
+// Variablen angelegen / umbenennen / anzeigen
 private function CreateScaleVariables(int $scale): void
-{
+{    
     $name = $this->GetChemicalName($scale);
 
     if ($this->IsScaleItemActive($scale, 'Weight')) {
@@ -320,10 +138,12 @@ private function CreateScaleVariables(int $scale): void
             'POOLCHEMIE.Kilogramm',
             1
         );
+        $this->RenameVariableIfExists('Weight_' . $scale,$name . ' Gewicht');
         IPS_SetHidden($this->GetIDForIdent('Weight_' . $scale), false);
     } else {
         $this->HideVariableIfExists('Weight_' . $scale);
     }
+
 
     if ($this->IsScaleItemActive($scale, 'Tare')) {
         $this->RegisterVariableFloat(
@@ -332,6 +152,7 @@ private function CreateScaleVariables(int $scale): void
             'POOLCHEMIE.Kilogramm',
             1
         );
+        $this->RenameVariableIfExists('Tare_' . $scale,$name . ' Tara');
         IPS_SetHidden($this->GetIDForIdent('Tare_' . $scale), false);
     } else {
         $this->HideVariableIfExists('Tare_' . $scale);
@@ -344,6 +165,7 @@ private function CreateScaleVariables(int $scale): void
             'POOLCHEMIE.Kilogramm',
             1
         );
+        $this->RenameVariableIfExists('ConsumptionDay_' . $scale,$name . ' Verbrauch Tag');
         IPS_SetHidden($this->GetIDForIdent('ConsumptionDay_' . $scale), false);
     } else {
         $this->HideVariableIfExists('ConsumptionDay_' . $scale);
@@ -356,6 +178,7 @@ private function CreateScaleVariables(int $scale): void
             'POOLCHEMIE.Kilogramm',
             1
         );
+        $this->RenameVariableIfExists('ConsumptionToday_' . $scale,$name . ' Verbrauch Heute');
         IPS_SetHidden($this->GetIDForIdent('ConsumptionToday_' . $scale), false);
     } else {
         $this->HideVariableIfExists('ConsumptionToday_' . $scale);
@@ -368,6 +191,7 @@ private function CreateScaleVariables(int $scale): void
             'POOLCHEMIE.Kilogramm',
             1
         );
+        $this->RenameVariableIfExists('ConsumptionTotal_' . $scale,$name . ' Verbrauch Gesamt');
         IPS_SetHidden($this->GetIDForIdent('ConsumptionTotal_' . $scale), false);
     } else {
         $this->HideVariableIfExists('ConsumptionTotal_' . $scale);
@@ -381,6 +205,7 @@ private function CreateScaleVariables(int $scale): void
             1
         );
         $this->EnableAction('ConsumptionEnabled_' . $scale);
+        $this->RenameVariableIfExists('ConsumptionEnabled_' . $scale,$name . ' Verbrauch aktiv');
         IPS_SetHidden($this->GetIDForIdent('ConsumptionEnabled_' . $scale), false);
     } else {
         $this->HideVariableIfExists('ConsumptionEnabled_' . $scale);
@@ -392,8 +217,9 @@ private function CreateScaleVariables(int $scale): void
             $name . ' Tara auslösen',
             'POOLCHEMIE.Button',
             1
-        );
+        );        
         $this->EnableAction('TareButton_' . $scale);
+        $this->RenameVariableIfExists('TareButton_' . $scale,$name . ' Tara auslösen');
         IPS_SetHidden($this->GetIDForIdent('TareButton_' . $scale), false);
     } else {
         $this->HideVariableIfExists('TareButton_' . $scale);
@@ -405,8 +231,9 @@ private function CreateScaleVariables(int $scale): void
             $name . ' Tara löschen',
             'POOLCHEMIE.DeleteButton',
             1
-        );
+        );        
         $this->EnableAction('ClearTareButton_' . $scale);
+        $this->RenameVariableIfExists('ClearTareButton_' . $scale,$name . ' Tara löschen');
         IPS_SetHidden($this->GetIDForIdent('ClearTareButton_' . $scale), false);
     } else {
         $this->HideVariableIfExists('ClearTareButton_' . $scale);
@@ -420,12 +247,60 @@ private function CreateScaleVariables(int $scale): void
             1
         );
         $this->EnableAction('ResetTotalButton_' . $scale);
+        $this->RenameVariableIfExists('ResetTotalButton_' . $scale,$name . ' Gesamtverbrauch löschen');
         IPS_SetHidden($this->GetIDForIdent('ResetTotalButton_' . $scale), false);
     } else {
         $this->HideVariableIfExists('ResetTotalButton_' . $scale);
     }
 }
+//Hilfsfunktion umbenennen der Variablenm, falls existent
+private function RenameVariableIfExists(string $ident, string $name): void
+{
+    $id = @$this->GetIDForIdent($ident);
 
+    if ($id !== false) {
+        IPS_SetName($id, $name);
+    }
+}
+
+//Hilfsfunktion Logging für Verbrauch einschalten
+private function EnableArchiveForConsumptionTotal(int $scale): void
+{
+    $ident = 'ConsumptionTotal_' . $scale;
+    $variableID = @$this->GetIDForIdent($ident);
+
+    if ($variableID === false) {
+        return;
+    }
+
+    $archiveID = @IPS_GetInstanceIDByName('Archive', 0);
+
+    if ($archiveID === false) {
+        $archiveID = @IPS_GetInstanceIDByName('Archiv', 0);
+    }
+
+    if ($archiveID === false) {
+        $this->Debug(
+            'Archiv',
+            'Keine Archiv-Control-Instanz gefunden.',
+            0
+        );
+        return;
+    }
+
+    AC_SetLoggingStatus($archiveID, $variableID, true);
+    AC_SetAggregationType($archiveID, $variableID, 1);
+    AC_SetCounterIgnoreZeros($archiveID, $variableID, true);
+    IPS_ApplyChanges($archiveID);
+
+    $this->Debug(
+        'Archiv',
+        'Archivierung für ' . $ident . ' aktiviert. Archiv-ID=' . $archiveID,
+        0
+    );
+}
+
+//Hilfsfunktion Ausblenden der Variable falls Existen
 private function HideVariableIfExists(string $ident): void
 {
     $id = @$this->GetIDForIdent($ident);
@@ -435,33 +310,36 @@ private function HideVariableIfExists(string $ident): void
     }
 }
 
+private function IsScaleItemActive(int $scale, string $ident): bool
+{
+    $row = $this->GetScaleConfigRow($scale);
+
+    return (bool)($row[$ident] ?? false);
+}
+
 public function RequestAction($Ident, $Value)
 {
-    $this->SendDebug(
+    $this->Debug(
         'RequestAction',
         'Ident=' . $Ident . ' Value=' . print_r($Value, true),
         0
     );
 
     
-    IPS_LogMessage(
-        'PoolChemie RequestAction',
-        'Ident=' . $Ident . ' Value=' . print_r($Value, true)
-    );
-
-
     if (preg_match('/^ConsumptionEnabled_([1-4])$/', $Ident, $matches)) {
         $scale = (int)$matches[1];
 
         SetValue($this->GetIDForIdent($Ident), (bool)$Value);
 
-        // Bei jeder Änderung des Verbrauchsmodus wird die Verbrauchsbasis verworfen.
-        // Dadurch erzeugt ein Kanisterwechsel keinen falschen Verbrauch.
-        $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, false);
+        // Beim Umschalten wird die nächste Verbrauchsberechnung übersprungen.
+        $this->WriteAttributeBoolean('IgnoreNextConsumption_' . $scale, true);
 
-        $this->SendDebug(
+        $this->Debug(
             'Verbrauchsmodus',
-            'Waage ' . $scale . ' Verbrauch aktiv = ' . ((bool)$Value ? 'JA' : 'NEIN') . '. Verbrauchsbasis wurde zurückgesetzt.',
+            'Waage ' . $scale .
+            ' Verbrauch aktiv = ' .
+            ((bool)$Value ? 'JA' : 'NEIN') .
+            '. Naechste Verbrauchsberechnung wird uebersprungen.',
             0
         );
 
@@ -471,7 +349,7 @@ public function RequestAction($Ident, $Value)
     if (preg_match('/^TareButton_([1-4])$/', $Ident, $matches)) {
         $scale = (int)$matches[1];
 
-        $this->SendDebug('Tare', 'TareButton gedrückt für Waage ' . $scale, 0);
+        $this->Debug('Tare', 'TareButton gedrückt für Waage ' . $scale, 0);
 
         $this->SendTare($scale);
 
@@ -482,7 +360,7 @@ public function RequestAction($Ident, $Value)
     if (preg_match('/^ClearTareButton_([1-4])$/', $Ident, $matches)) {
         $scale = (int)$matches[1];
 
-        $this->SendDebug('TareClear', 'ClearTareButton gedrückt für Waage ' . $scale, 0);
+        $this->Debug('TareClear', 'ClearTareButton gedrückt für Waage ' . $scale, 0);
 
         $this->SendClearTare($scale);
 
@@ -503,10 +381,7 @@ public function RequestAction($Ident, $Value)
 
 private function SendTare(int $scale): void
 {
-    IPS_LogMessage('PoolChemie', 'Tara auslösen Waage ' . $scale);
-
-    $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, false);
-
+    $this->WriteAttributeBoolean('IgnoreNextConsumption_' . $scale, true);
     $baseTopic = rtrim($this->ReadPropertyString('BaseTopic'), '/');
 
     $this->PublishMQTT(
@@ -518,10 +393,7 @@ private function SendTare(int $scale): void
 
 private function SendClearTare(int $scale): void
 {
-    IPS_LogMessage('PoolChemie', 'Tara löschen Waage ' . $scale);
-
-    $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, false);
-
+    $this->WriteAttributeBoolean('IgnoreNextConsumption_' . $scale, true);
     $baseTopic = rtrim($this->ReadPropertyString('BaseTopic'), '/');
 
     $this->PublishMQTT(
@@ -531,6 +403,7 @@ private function SendClearTare(int $scale): void
     );
 }
 
+// Daten von der MQTT-Schnittstelle empfangen
 public function ReceiveData($JSONString)
 {
     $data = json_decode($JSONString, true);
@@ -563,6 +436,7 @@ public function ReceiveData($JSONString)
     return '';
 }
 
+//Aktualisiert die Gewichtsvariable
 private function ProcessWeight(int $scale, float $weight): void
 {
     $scaleCount = $this->ReadPropertyInteger('ScaleCount');
@@ -577,150 +451,102 @@ private function ProcessWeight(int $scale, float $weight): void
 
     $this->CheckDailyReset();
 
+    $weightID = @$this->GetIDForIdent('Weight_' . $scale);
+
+    if ($weightID === false) {
+        return;
+    }
+
+    $oldWeight = (float)GetValue($weightID);
+
+    $variableInfo = IPS_GetVariable($weightID);
+    $lastChanged = (int)$variableInfo['VariableChanged'];
+
     $now = time();
 
     $minDelta = $this->ReadPropertyFloat('MinWeightDelta');
     $minInterval = $this->ReadPropertyInteger('MinUpdateInterval');
 
-    $hasLast = $this->ReadAttributeBoolean('HasWrittenWeight_' . $scale);
-    $lastWeight = $this->ReadAttributeFloat('LastWrittenWeight_' . $scale);
-    $lastTime = $this->ReadAttributeInteger('LastWrittenWeightTime_' . $scale);
+    $deltaReached = abs($oldWeight - $weight) >= $minDelta;
+    $intervalReached = ($now - $lastChanged) >= $minInterval;
 
-    if ($hasLast) {
-        $delta = abs($weight - $lastWeight);
-        $age = $now - $lastTime;
-
-        if ($delta < $minDelta && $age < $minInterval) {
-            return;
-        }
+    if (!$intervalReached) {
+        return;
     }
 
-    $this->WriteAttributeFloat('LastWrittenWeight_' . $scale, $weight);
-    $this->WriteAttributeInteger('LastWrittenWeightTime_' . $scale, $now);
-    $this->WriteAttributeBoolean('HasWrittenWeight_' . $scale, true);
+    if (!$deltaReached) {
+        return;
+    }
 
-    
-    $this->SendDebug(
+    // Gewicht schreiben
+    SetValue($weightID, $weight);
+
+    $this->Debug(
         'ProcessWeight',
-        'Waage ' . $scale . ': schreibe Gewicht=' . number_format($weight, 3) . ' kg',
-        0
-    );
-
-
-    // Das ist jetzt der entscheidende Auslöser.
-    // SetValue auf Weight_X löst danach MessageSink() aus.
-    $this->UpdateWeightVariable($scale, $weight);
-}
-
-public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
-{
-    parent::MessageSink($TimeStamp, $SenderID, $Message, $Data);
-
-    $allowedMessages = [VM_UPDATE];
-
-    if (defined('VM_CHANGE')) {
-        $allowedMessages[] = VM_CHANGE;
-    }
-
-    if (!in_array($Message, $allowedMessages, true)) {
-        return;
-    }
-
-    $this->SendDebug(
-        'MessageSink',
-        'SenderID=' . $SenderID . ' Message=' . $Message,
-        0
-    );
-
-    $scaleCount = $this->ReadPropertyInteger('ScaleCount');
-
-    if ($scaleCount < 1) {
-        $scaleCount = 1;
-    }
-
-    if ($scaleCount > 4) {
-        $scaleCount = 4;
-    }
-
-    for ($scale = 1; $scale <= $scaleCount; $scale++) {
-        $weightID = @$this->GetIDForIdent('Weight_' . $scale);
-
-        if ($weightID === false) {
-            continue;
-        }
-
-        if ($SenderID === $weightID) {
-            $newWeight = (float)GetValue($weightID);
-
-            $this->SendDebug(
-                'OnChangeGewicht Trigger',
-                'Waage ' . $scale . ': neuer Wert=' . number_format($newWeight, 3) . ' kg',
-                0
-            );
-
-            $this->OnWeightVariableChanged($scale, $newWeight);
-
-            return;
-        }
-    }
-}
-
-private function OnWeightVariableChanged(int $scale, float $newWeight): void
-{
-    $enabledID = @$this->GetIDForIdent('ConsumptionEnabled_' . $scale);
-    $consumptionEnabled = false;
-
-    if ($enabledID !== false) {
-        $consumptionEnabled = GetValue($enabledID);
-    }
-
-    $this->SendDebug(
-        'OnChangeGewicht',
         'Waage ' . $scale .
-        ': Neuer Wert=' . number_format($newWeight, 3) .
-        ' kg Verbrauch aktiv=' . ($consumptionEnabled ? 'JA' : 'NEIN'),
+        ': Gewicht von ' . number_format($oldWeight, 3) .
+        ' kg auf ' . number_format($weight, 3) . ' kg gesetzt.',
         0
     );
 
-    if (!$consumptionEnabled) {
-        $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, false);
+    // Verbrauch prüfen
+    $enabledID = @$this->GetIDForIdent('ConsumptionEnabled_' . $scale);
+
+    if ($enabledID === false || !GetValue($enabledID)) {
         return;
     }
 
-    $hasBase = $this->ReadAttributeBoolean('HasProcessedWeight_' . $scale);
-    $oldWeight = $this->ReadAttributeFloat('LastProcessedWeight_' . $scale);
+    // Direkt nach Umschalten Verbrauch aktiv: einmal überspringen
+    if ($this->ReadAttributeBoolean('IgnoreNextConsumption_' . $scale)) {
+        $this->WriteAttributeBoolean('IgnoreNextConsumption_' . $scale, false);
 
-    if (!$hasBase) {
-        $this->WriteAttributeFloat('LastProcessedWeight_' . $scale, $newWeight);
-        $this->WriteAttributeInteger('LastProcessedTime_' . $scale, time());
-        $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, true);
-
-        $this->SendDebug(
-            'Verbrauchsbasis',
+        $this->Debug(
+            'Verbrauch',
             'Waage ' . $scale .
-            ': Neue Basis=' . number_format($newWeight, 3) . ' kg',
+            ': Erste Messung nach Umschaltung ignoriert.',
             0
         );
 
         return;
     }
 
-    $this->CalculateConsumption($scale, $oldWeight, $newWeight);
+    // Verbrauch berechnen
+    $this->CalculateConsumption($scale, $oldWeight, $weight);
+}
 
-    $this->WriteAttributeFloat('LastProcessedWeight_' . $scale, $newWeight);
-    $this->WriteAttributeInteger('LastProcessedTime_' . $scale, time());
-    $this->WriteAttributeBoolean('HasProcessedWeight_' . $scale, true);
+private function CalculateConsumption(int $scale, float $oldWeight, float $newWeight): void
+{
+    $diff = $oldWeight - $newWeight;
 
-    $this->SendDebug(
-        'Verbrauch Check',
+    // Gewicht gestiegen oder gleich geblieben = kein Verbrauch
+    $maxupdatediff = $this->ReadPropertyFloat('MaxUpdateDiff');
+
+    if (abs($diff) >= $maxupdatediff) {
+        return;
+    }
+
+    $todayID = @$this->GetIDForIdent('ConsumptionToday_' . $scale);
+    $totalID = @$this->GetIDForIdent('ConsumptionTotal_' . $scale);
+
+    if ($todayID !== false) {
+        SetValue($todayID, GetValue($todayID) + $diff);
+    }
+
+    if ($totalID !== false) {
+        SetValue($totalID, GetValue($totalID) + $diff);
+    }
+
+    $this->Debug(
+        'Verbrauch',
         'Waage ' . $scale .
         ': Alt=' . number_format($oldWeight, 3) .
         ' kg Neu=' . number_format($newWeight, 3) .
-        ' kg Aktiv=' . ($consumptionEnabled ? 'JA' : 'NEIN'),
+        ' kg Verbrauch=' . number_format($diff, 3) . ' kg',
         0
     );
 }
 
+//Aktualisiert die Tarevariable
 private function ProcessTare(int $scale, float $tare): void
 {
     $scaleCount = $this->ReadPropertyInteger('ScaleCount');
@@ -732,51 +558,17 @@ private function ProcessTare(int $scale, float $tare): void
     if (!$this->IsScaleItemActive($scale, 'Tare')) {
         return;
     }
-
-    $now = time();
-
-    $minTareDelta = $this->ReadPropertyFloat('MinTareDelta');
-    $tareUpdateInterval = $this->ReadPropertyInteger('TareUpdateInterval');
-
-    $hasLast = $this->ReadAttributeBoolean('HasProcessedTare_' . $scale);
-    $lastTare = $this->ReadAttributeFloat('LastProcessedTare_' . $scale);
-    $lastTime = $this->ReadAttributeInteger('LastProcessedTareTime_' . $scale);
-
-    if ($hasLast) {
-        $delta = abs($tare - $lastTare);
-        $age = $now - $lastTime;
-
-        if ($delta < $minTareDelta && $age < $tareUpdateInterval) {
-            return;
-        }
-    }
-
+ 
     $ident = 'Tare_' . $scale;
     $id = @$this->GetIDForIdent($ident);
 
+    
     if ($id !== false) {
-        SetValue($id, $tare);
-    }
+        $oldTare = (float)GetValue($id);
 
-    $this->WriteAttributeFloat('LastProcessedTare_' . $scale, $tare);
-    $this->WriteAttributeInteger('LastProcessedTareTime_' . $scale, $now);
-    $this->WriteAttributeBoolean('HasProcessedTare_' . $scale, true);
-
-    $this->SendDebug(
-        'Tara',
-        'Waage ' . $scale . ': Tara aktualisiert = ' . number_format($tare, 3) . ' kg',
-        0
-    );
-}
-
-private function UpdateWeightVariable(int $scale, float $weight): void
-{
-    $ident = 'Weight_' . $scale;
-
-    $id = @$this->GetIDForIdent($ident);
-
-    if ($id !== false) {
-        SetValue($id, $weight);
+        if (abs($oldTare - $tare) > 0.01) {
+            SetValue($id, $tare);
+        }
     }
 }
 
@@ -793,42 +585,11 @@ private function PublishMQTT(string $topic, string $payload, bool $retain = fals
 
     $json = json_encode($data);
 
-    $this->SendDebug('MQTT TX', $json, 0);
-    IPS_LogMessage('PoolChemie TX', $json);
+    $this->Debug('MQTT TX', $json, 0);
 
     $this->SendDataToParent($json);
 }
 
-private function CalculateConsumption(int $scale, float $oldWeight, float $newWeight): void
-{
-    $diff = $oldWeight - $newWeight;
-
-    // Gewicht ist gestiegen oder gleich geblieben:
-    // kein Verbrauch
-    if ($diff <= 0) {
-        return;
-    }
-
-    $todayID = @$this->GetIDForIdent('ConsumptionToday_' . $scale);
-    $totalID = @$this->GetIDForIdent('ConsumptionTotal_' . $scale);
-
-    if ($todayID !== false) {
-        SetValue($todayID, GetValue($todayID) + $diff);
-    }
-
-    if ($totalID !== false) {
-        SetValue($totalID, GetValue($totalID) + $diff);
-    }
-
-    $this->SendDebug(
-        'Verbrauch',
-        'Waage ' . $scale .
-        ': Alt=' . number_format($oldWeight, 3) .
-        ' kg Neu=' . number_format($newWeight, 3) .
-        ' kg Verbrauch=' . number_format($diff, 3) . ' kg',
-        0
-    );
-}
 
 public function CheckDailyReset(): void
 {
@@ -869,7 +630,7 @@ public function CheckDailyReset(): void
 
     $this->WriteAttributeString('LastDailyResetDate', $today);
 
-    $this->SendDebug(
+    $this->Debug(
         'Tageswechsel',
         'Tagesverbrauch wurde abgeschlossen und Verbrauch Heute wurde zurückgesetzt.',
         0
@@ -908,9 +669,8 @@ private function GetNotificationControlID(): int
 
 private function SendModuleNotification(string $title, string $message): void
 {
-    IPS_LogMessage($title, $message);
 
-    $this->SendDebug(
+    $this->Debug(
         'Benachrichtigung',
         $title . ': ' . $message,
         0
@@ -925,7 +685,6 @@ private function SendModuleNotification(string $title, string $message): void
             'PoolChemie Benachrichtigung',
             'NC_PushNotification ist auf diesem System nicht verfügbar. Nachricht wurde nur ins Log geschrieben: ' . $message
         );
-
         return;
     }
 
@@ -936,7 +695,6 @@ private function SendModuleNotification(string $title, string $message): void
             'PoolChemie Benachrichtigung',
             'Keine gültige Notification-Control-Instanz gefunden.'
         );
-
         return;
     }
 
@@ -1013,7 +771,7 @@ public function CheckThresholdNotification(bool $force = false): void
         }
 
         $weight = GetValue($weightID);
-        $threshold = $this->ReadPropertyFloat('Scale' . $scale . 'Threshold');
+        $threshold = $this->GetScaleThreshold($scale);
 
         if ($weight < $threshold) {
             $chemicals[] = $this->GetChemicalName($scale);
@@ -1040,6 +798,12 @@ public function CheckThresholdNotification(bool $force = false): void
     }
 }
 
+private function GetScaleThreshold(int $scale): float
+{
+    $row = $this->GetScaleConfigRow($scale);
+
+    return (float)($row['Threshold'] ?? 0.0);
+}
 private function BuildThresholdMessage(array $chemicals): string
 {
     if (count($chemicals) === 1) {
@@ -1055,6 +819,12 @@ private function BuildThresholdMessage(array $chemicals): string
         '. Bitte diese Chemikalien nachbestellen.';
 }
 
+private function Debug(string $title, string $message): void
+{
+    if ($this->ReadPropertyBoolean('DebugEnabled')) {
+        $this->Debug($title, $message, 0);
+    }
+}
 
 
 // Konfigurationsformular Konsole
@@ -1071,39 +841,21 @@ public function GetConfigurationForm()
     }
 
     $elements = [];
+    $actions = [];
+
+    /*
+     * Allgemein
+     */
+    $elements[] = [
+        'type' => 'Label',
+        'caption' => 'Allgemein'
+    ];
 
     $elements[] = [
         'type' => 'ValidationTextBox',
         'name' => 'BaseTopic',
         'caption' => 'MQTT Basistopic'
     ];
-
-    $elements[] = [
-        'type' => 'ValidationTextBox',
-        'name' => 'NotificationTime',
-        'caption' => 'Benachrichtigungszeit HH:MM'
-    ];
-
-    $elements[] = [
-        'type' => 'CheckBox',
-        'name' => 'NotificationEnabled',
-        'caption' => 'Benachrichtigung aktivieren'
-    ];
-
-    $elements[] = [
-        'type' => 'SelectInstance',
-        'name' => 'NotificationViewID',
-        'caption' => 'WebFront für Push-Benachrichtigung'
-    ];
-
-        
-    $elements[] = [
-        'type' => 'SelectInstance',
-        'name' => 'NotificationControlID',
-        'caption' => 'Notification Control Instanz (optional)'
-    ];
-
-
 
     $elements[] = [
         'type' => 'Select',
@@ -1129,6 +881,54 @@ public function GetConfigurationForm()
         ]
     ];
 
+       $elements[] = [
+        'type' => 'CheckBox',
+        'name' => 'DebugEnabled',
+        'caption' => 'Debuging  aktivieren'
+    ];
+
+    /*
+     * Benachrichtigung
+     */
+    $elements[] = [
+        'type' => 'Label',
+        'caption' => 'Benachrichtigung'
+    ];
+
+    $elements[] = [
+        'type' => 'CheckBox',
+        'name' => 'NotificationEnabled',
+        'caption' => 'Benachrichtigung aktivieren'
+    ];
+
+    $elements[] = [
+        'type' => 'ValidationTextBox',
+        'name' => 'NotificationTime',
+        'caption' => 'Benachrichtigungszeit HH:MM'
+    ];
+
+    $elements[] = [
+        'type' => 'NumberSpinner',
+        'name' => 'NotificationViewID',
+        'caption' => 'View-ID für Push-Benachrichtigung',
+        'minimum' => 0,
+        'maximum' => 999999
+    ];
+
+    $elements[] = [
+        'type' => 'SelectInstance',
+        'name' => 'NotificationControlID',
+        'caption' => 'Notification Control Instanz optional'
+    ];
+
+    /*
+     * Verarbeitung
+     */
+    $elements[] = [
+        'type' => 'Label',
+        'caption' => 'Verarbeitung'
+    ];
+
     $elements[] = [
         'type' => 'NumberSpinner',
         'name' => 'MinUpdateInterval',
@@ -1150,92 +950,140 @@ public function GetConfigurationForm()
 
     $elements[] = [
         'type' => 'NumberSpinner',
-        'name' => 'MinTareDelta',
-        'caption' => 'Minimale Tara-Änderung',
+        'name' => 'MaxUpdateDiff',
+        'caption' => 'Maximale Gewichtsänderung',
         'suffix' => ' kg',
         'digits' => 3,
         'minimum' => 0,
-        'maximum' => 10
+        'maximum' => 1000
     ];
+
+    /*
+     * Waagen
+     */
+    $elements[] = [
+        'type' => 'Label',
+        'caption' => 'Waagen-Konfiguration'
+    ];
+
+    $scaleConfig = $this->GetScaleConfigForForm($scaleCount);
 
     $elements[] = [
-        'type' => 'NumberSpinner',
-        'name' => 'TareUpdateInterval',
-        'caption' => 'Tara Aktualisierungsintervall',
-        'suffix' => ' Sekunden',
-        'minimum' => 1,
-        'maximum' => 3600
-    ];
-
-    for ($i = 1; $i <= $scaleCount; $i++) {
-        $elements[] = [
-            'type' => 'Select',
-            'name' => 'Scale' . $i . 'Type',
-            'caption' => 'Waage ' . $i . ' Chemie',
-            'options' => $this->GetChemicalOptions()
-        ];
-
-        $elements[] = [
-            'type' => 'NumberSpinner',
-            'name' => 'Scale' . $i . 'Threshold',
-            'caption' => 'Waage ' . $i . ' unterer Schwellwert Nachricht',
-            'suffix' => ' kg',
-            'digits' => 3,
-            'minimum' => 0,
-            'maximum' => 1000
-        ];
-
-        $elements[] = [
-            'type' => 'List',
-            'name' => 'Scale' . $i . 'Items',
-            'caption' => 'Waage ' . $i . ' Variablen',
-            'rowCount' => 9,
-            'add' => false,
-            'delete' => false,
-            'columns' => [
-                [
-                    'caption' => 'Index',
-                    'name' => 'Index',
-                    'width' => '70px',
-                    'edit' => [
-                        'type' => 'NumberSpinner',
-                        'enabled' => false
-                    ]
-                ],
-                [
-                    'caption' => 'Name',
-                    'name' => 'Name',
-                    'width' => '300px',
-                    'edit' => [
-                        'type' => 'ValidationTextBox',
-                        'enabled' => false
-                    ]
-                ],
-                [
-                    'caption' => 'Ident',
-                    'name' => 'Ident',
-                    'width' => '180px',
-                    'edit' => [
-                        'type' => 'ValidationTextBox',
-                        'enabled' => false
-                    ]
-                ],
-                [
-                    'caption' => 'Aktiv',
-                    'name' => 'Active',
-                    'width' => '100px',
-                    'edit' => [
-                        'type' => 'CheckBox'
-                    ]
+        'type' => 'List',
+        'name' => 'ScaleConfig',
+        'caption' => 'Waagen',
+        'rowCount' => $scaleCount,
+        'add' => false,
+        'delete' => false,
+        'columns' => [
+            [
+                'caption' => 'Waage',
+                'name' => 'Scale',
+                'width' => '70px',
+                'edit' => [
+                    'type' => 'NumberSpinner',
+                    'enabled' => false
                 ]
             ],
-            'values' => $this->GetScaleItems($i)
-        ];
-    }
+            [
+                'caption' => 'Chemie',
+                'name' => 'Chemical',
+                'width' => '180px',
+                'edit' => [
+                    'type' => 'Select',
+                    'options' => $this->GetChemicalOptions()
+                ]
+            ],
+            [
+                'caption' => 'Schwellwert',
+                'name' => 'Threshold',
+                'width' => '130px',
+                'edit' => [
+                    'type' => 'NumberSpinner',
+                    'digits' => 3,
+                    'minimum' => 0,
+                    'maximum' => 1000
+                ]
+            ],
+            [
+                'caption' => 'Gewicht',
+                'name' => 'Weight',
+                'width' => '90px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Tara',
+                'name' => 'Tare',
+                'width' => '80px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Heute',
+                'name' => 'ConsumptionToday',
+                'width' => '90px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Tag',
+                'name' => 'ConsumptionDay',
+                'width' => '80px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Gesamt',
+                'name' => 'ConsumptionTotal',
+                'width' => '90px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Berechnung',
+                'name' => 'ConsumptionEnabled',
+                'width' => '110px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Tara setzen',
+                'name' => 'TareButton',
+                'width' => '110px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Tara löschen',
+                'name' => 'ClearTareButton',
+                'width' => '110px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ],
+            [
+                'caption' => 'Gesamt löschen',
+                'name' => 'ResetTotalButton',
+                'width' => '130px',
+                'edit' => [
+                    'type' => 'CheckBox'
+                ]
+            ]
+        ],
+        'values' => $scaleConfig
+    ];
 
-
-    $actions = [];
-
+    /*
+     * Aktionen
+     */
     $actions[] = [
         'type' => 'Button',
         'caption' => 'Push-Nachricht prüfen',
@@ -1244,13 +1092,47 @@ public function GetConfigurationForm()
 
     $actions[] = [
         'type' => 'Label',
-        'caption' => 'Hinweis: Nach Änderung der Anzahl Waagen bitte Übernehmen klicken. Danach wird die Anzahl der Chemie-Auswahllisten angepasst.'
+        'caption' => 'Hinweis: Nach Änderung der Anzahl Waagen bitte Übernehmen klicken. Danach wird die Tabelle angepasst.'
     ];
 
     return json_encode([
         'elements' => $elements,
         'actions' => $actions
     ]);
+}
+
+private function GetScaleConfigForForm(int $scaleCount): array
+{
+    $config = $this->GetScaleConfig();
+    $defaults = $this->GetDefaultScaleConfig();
+
+    $result = [];
+
+    for ($i = 1; $i <= $scaleCount; $i++) {
+        $row = null;
+
+        foreach ($config as $configRow) {
+            if ((int)($configRow['Scale'] ?? 0) === $i) {
+                $row = $configRow;
+                break;
+            }
+        }
+
+        if ($row === null) {
+            foreach ($defaults as $defaultRow) {
+                if ((int)($defaultRow['Scale'] ?? 0) === $i) {
+                    $row = $defaultRow;
+                    break;
+                }
+            }
+        }
+
+        if ($row !== null) {
+            $result[] = $row;
+        }
+    }
+
+    return $result;
 }
 
 private function GetChemicalOptions(): array
@@ -1286,4 +1168,103 @@ private function GetChemicalOptions(): array
         ]
     ];
 }
+
+private function GetChemicalName(int $scale): string
+{
+    $row = $this->GetScaleConfigRow($scale);
+
+    return (string)($row['Chemical'] ?? ('Waage ' . $scale));
+}
+
+private function GetDefaultScaleConfig(): array
+{
+    return [
+        [
+            'Scale' => 1,
+            'Chemical' => 'Chlor',
+            'Threshold' => 5.0,
+            'Weight' => true,
+            'Tare' => true,
+            'ConsumptionToday' => true,
+            'ConsumptionDay' => true,
+            'ConsumptionTotal' => true,
+            'ConsumptionEnabled' => true,
+            'TareButton' => true,
+            'ClearTareButton' => true,
+            'ResetTotalButton' => true
+        ],
+        [
+            'Scale' => 2,
+            'Chemical' => 'pH Minus',
+            'Threshold' => 5.0,
+            'Weight' => true,
+            'Tare' => true,
+            'ConsumptionToday' => true,
+            'ConsumptionDay' => true,
+            'ConsumptionTotal' => true,
+            'ConsumptionEnabled' => true,
+            'TareButton' => true,
+            'ClearTareButton' => true,
+            'ResetTotalButton' => true
+        ],
+        [
+            'Scale' => 3,
+            'Chemical' => 'Flockungsmittel',
+            'Threshold' => 5.0,
+            'Weight' => true,
+            'Tare' => true,
+            'ConsumptionToday' => true,
+            'ConsumptionDay' => true,
+            'ConsumptionTotal' => true,
+            'ConsumptionEnabled' => true,
+            'TareButton' => true,
+            'ClearTareButton' => true,
+            'ResetTotalButton' => true
+        ],
+        [
+            'Scale' => 4,
+            'Chemical' => 'Aktivsauerstoff',
+            'Threshold' => 5.0,
+            'Weight' => true,
+            'Tare' => true,
+            'ConsumptionToday' => true,
+            'ConsumptionDay' => true,
+            'ConsumptionTotal' => true,
+            'ConsumptionEnabled' => true,
+            'TareButton' => true,
+            'ClearTareButton' => true,
+            'ResetTotalButton' => true
+        ]
+    ];
+}
+
+private function GetScaleConfig(): array
+{
+    $json = $this->ReadPropertyString('ScaleConfig');
+    $config = json_decode($json, true);
+
+    if (!is_array($config)) {
+        return $this->GetDefaultScaleConfig();
+    }
+
+    return $config;
+}
+
+private function GetScaleConfigRow(int $scale): array
+{
+    foreach ($this->GetScaleConfig() as $row) {
+        if ((int)($row['Scale'] ?? 0) === $scale) {
+            return $row;
+        }
+    }
+
+    foreach ($this->GetDefaultScaleConfig() as $row) {
+        if ((int)($row['Scale'] ?? 0) === $scale) {
+            return $row;
+        }
+    }
+
+    return [];
+}
+
 }
