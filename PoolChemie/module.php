@@ -50,7 +50,7 @@ public function Create()
         
     }
 
-    $this->ConnectParent('{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}');
+    $this->ConnectParent(self::MQTT_SERVER_MODULE);
 }
 
 public function Destroy()
@@ -518,9 +518,9 @@ private function CalculateConsumption(int $scale, float $oldWeight, float $newWe
     $diff = $oldWeight - $newWeight;
 
     // Gewicht gestiegen oder gleich geblieben = kein Verbrauch
-    $maxupdatediff = $this->ReadPropertyFloat('MaxUpdateDiff');
+    $maxUpdateDiff = $this->ReadPropertyFloat('MaxUpdateDiff');
 
-    if (abs($diff) >= $maxupdatediff) {
+    if (abs($diff) >= $maxUpdateDiff) {
         return;
     }
 
@@ -821,7 +821,7 @@ private function BuildThresholdMessage(array $chemicals): string
 private function Debug(string $title, string $message): void
 {
     if ($this->ReadPropertyBoolean('DebugEnabled')) {
-        $this->Debug($title, $message, 0);
+        $this->SendDebug($title, $message, 0);
     }
 }
 
