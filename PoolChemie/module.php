@@ -417,6 +417,7 @@ public function ReceiveData($JSONString)
         return '';
     }
 
+    $this->Debug('ReceiveData',$payload,0);
     $baseTopic = rtrim($this->ReadPropertyString('BaseTopic'), '/');
 
     for ($scale = 1; $scale <= 4; $scale++) {
