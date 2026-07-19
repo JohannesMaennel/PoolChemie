@@ -1,8 +1,8 @@
 {
     "id": "{A761D69F-DE65-4B77-AEE4-7BE21F0F3101}",
     "author": "Johannes Maennel",
-    "name": "Maennel Pool Module",
-    "url": "https://github.com/JohannesMaennel/PoolChemie",
+    "name": "Maennel IPS-Module",
+    "url": "https://github.com/JohannesMaennel/IPS-Module",
     "compatibility": {"version": "7.1"},
     "version": "1.0",
     "build": 0,
