@@ -1,6 +1,6 @@
 esphome:
   name: drucksensor
-  friendly_name: Drucksensor
+
   project:
     name: maennel.drucksensor
     version: "0.1.0"
@@ -11,16 +11,16 @@ esp32:
     type: esp-idf
 
 logger:
-  level: INFO
+  level: debug
 
 ota:
   - platform: esphome
     password: !secret ota_password
 
 wifi:
-  # ssid: !secret wifi_ssid  
-  # password: !secret wifi_password
-
+  ssid: !secret wifi_ssid  
+  password: !secret wifi_password
+  power_save_mode: none
   ap:
     ssid: !secret ap_ssid
     password: !secret ap_password
@@ -46,76 +46,74 @@ api:
 #   discovery: false
 
 i2c:
-    sda: GPIO5
-    scl: GPIO6
+    sda: GPIO1
+    scl: GPIO2
     scan: true
 
 
-# ads1115:
-#   - address: 0x48
-#     i2c_id: bus_adc
+ads1115:
+  - address: 0x48
 
-# sensor:
-#   - platform: ads1115
-#     multiplexer: A0_GND
-#     gain: 4.096
-#     id: pressure_voltage
-#     name: "Drucksensor Spannung"
-#     update_interval: 1s
+sensor:
+  - platform: ads1115
+    multiplexer: A0_GND
+    gain: 4.096
+    id: pressure_voltage
+    name: "Drucksensor Spannung"
+    update_interval: 1s
 
-#   - platform: template
-#     name: "Druck"
-#     id: pressure_bar
-#     unit_of_measurement: "bar"
-#     accuracy_decimals: 2
-#     lambda: |-
-#       float voltage = id(pressure_voltage).state;#
+  - platform: template
+    name: "Druck"
+    id: pressure_bar
+    unit_of_measurement: "bar"
+    accuracy_decimals: 2
+    lambda: |-
+      float voltage = id(pressure_voltage).state;
 
-#       float psi = ((voltage - 0.5) * 80.0) / 4.0;
-#       float bar = psi * 0.0689476;
+      float psi = ((voltage - 0.5) * 80.0) / 4.0;
+      float bar = psi * 0.0689476;
 
-#       if(bar < 0) bar = 0;
+      if(bar < 0) bar = 0;
 
-#       return bar;
-#     update_interval: 1s
+      return bar;
+    update_interval: 1s
 
-# text_sensor:
-#   - platform: wifi_info
-#     ip_address:
-#       id: my_ip
-#       name: "IP-Adresse"
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: my_ip
+      name: "IP-Adresse"
 
-# font:
-#   - file: "gfonts://Roboto"
-#     id: font_small
-#     size: 11
+font:
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 11
 
-# display:
-#   - platform: ssd1306_i2c
-#     i2c_id: bus_display
-#     model: "SSD1306 128x64"
-#     address: 0x3C
-#     lambda: |-
-#       it.printf(0, 0, id(font_small), "IP:");
-#       it.printf(0, 12, id(font_small), "%s",
-#                 id(my_ip).state.c_str());
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    address: 0x3C
+    lambda: |-
+      it.printf(0, 0, id(font_small), "IP:");
+      it.printf(0, 12, id(font_small), "%s",
+                id(my_ip).state.c_str());
 
-#       it.printf(0, 36, id(font_small),
-#                 "Druck: %.2f bar",
-#                 id(pressure_bar).state);
+      it.printf(0, 36, id(font_small),
+                "Druck: %.2f bar",
+                id(pressure_bar).state);
 
-# output:
-#   - platform: gpio
-#     pin: GPIO8
-#     id: blue_led
+output:
+  - platform: gpio
+    pin: GPIO8
+    id: blue_led
 
-# interval:
-#   - interval: 1s
-#     then:
-#       - if:
-#           condition:
-#             lambda: 'return id(pressure_bar).state > 0.1;'
-#           then:
-#             - output.turn_on: blue_led
-#           else:
-#             - output.turn_off: blue_led
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(pressure_bar).state > 0.1;'
+          then:
+            - output.turn_on: blue_led
+          else:
+            - output.turn_off: blue_led
