@@ -1,0 +1,12 @@
+{
+    "id": "{8AD8B5DA-3157-48A4-A9D6-5F9FC4A67201}",
+    "name": "Victron Forecast",
+    "type": 3,
+    "vendor": "Johannes Männel",
+    "aliases": [],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "VCF",
+    "url": ""
+}
